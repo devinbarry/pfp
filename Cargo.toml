@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 description = "Prefect CLI - a fast Rust CLI for managing Prefect deployments and flow runs"
 license = "MIT"
-repository = "https://gitfox.REDACTED.co/tools/pfp"
+repository = "https://github.com/devinbarry/pfp"
+publish = false
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
