@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::error::{PfpError, Result};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
+use std::collections::HashMap;
 
 pub struct PrefectClient {
     client: Client,
@@ -18,12 +19,11 @@ impl PrefectClient {
 
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}{}", self.config.api_url, path);
-        let response = self
-            .client
-            .get(&url)
-            .header("Authorization", &self.config.auth_header)
-            .send()
-            .await?;
+        let mut req = self.client.get(&url);
+        if let Some(auth) = &self.config.auth_header {
+            req = req.header("Authorization", auth);
+        }
+        let response = req.send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -40,13 +40,11 @@ impl PrefectClient {
         body: &serde_json::Value,
     ) -> Result<T> {
         let url = format!("{}{}", self.config.api_url, path);
-        let response = self
-            .client
-            .post(&url)
-            .header("Authorization", &self.config.auth_header)
-            .json(body)
-            .send()
-            .await?;
+        let mut req = self.client.post(&url);
+        if let Some(auth) = &self.config.auth_header {
+            req = req.header("Authorization", auth);
+        }
+        let response = req.json(body).send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -59,13 +57,11 @@ impl PrefectClient {
 
     pub async fn patch_no_content(&self, path: &str, body: &serde_json::Value) -> Result<()> {
         let url = format!("{}{}", self.config.api_url, path);
-        let response = self
-            .client
-            .patch(&url)
-            .header("Authorization", &self.config.auth_header)
-            .json(body)
-            .send()
-            .await?;
+        let mut req = self.client.patch(&url);
+        if let Some(auth) = &self.config.auth_header {
+            req = req.header("Authorization", auth);
+        }
+        let response = req.json(body).send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -83,7 +79,48 @@ impl PrefectClient {
             "limit": 100,
             "offset": 0
         });
-        self.post("/deployments/filter", &body).await
+        let mut deployments: Vec<serde_json::Value> =
+            self.post("/deployments/filter", &body).await?;
+
+        // Collect unique flow_ids to resolve flow names
+        let flow_ids: Vec<String> = deployments
+            .iter()
+            .filter_map(|d| d["flow_id"].as_str().map(|s| s.to_string()))
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        if !flow_ids.is_empty() {
+            let flow_names = self.fetch_flow_names(&flow_ids).await?;
+            for dep in &mut deployments {
+                if let Some(fid) = dep["flow_id"].as_str() {
+                    if let Some(name) = flow_names.get(fid) {
+                        dep["flow_name"] = serde_json::Value::String(name.clone());
+                    }
+                }
+            }
+        }
+
+        Ok(deployments)
+    }
+
+    async fn fetch_flow_names(&self, flow_ids: &[String]) -> Result<HashMap<String, String>> {
+        let body = serde_json::json!({
+            "flows": {
+                "id": {
+                    "any_": flow_ids
+                }
+            }
+        });
+        let flows: Vec<serde_json::Value> = self.post("/flows/filter", &body).await?;
+        Ok(flows
+            .into_iter()
+            .filter_map(|f| {
+                let id = f["id"].as_str()?.to_string();
+                let name = f["name"].as_str()?.to_string();
+                Some((id, name))
+            })
+            .collect())
     }
 
     pub async fn create_flow_run(
@@ -130,7 +167,7 @@ impl PrefectClient {
                 }
             },
             "sort": "TIMESTAMP_ASC",
-            "limit": 500
+            "limit": 200
         });
         self.post("/logs/filter", &body).await
     }
@@ -161,7 +198,7 @@ mod tests {
     fn test_client(server: &mockito::Server) -> PrefectClient {
         let config = Config {
             api_url: server.url(),
-            auth_header: "Basic dGVzdDp0ZXN0".to_string(),
+            auth_header: Some("Basic dGVzdDp0ZXN0".to_string()),
         };
         PrefectClient::new(config)
     }
@@ -169,11 +206,18 @@ mod tests {
     #[tokio::test]
     async fn list_deployments_success() {
         let mut server = mockito::Server::new_async().await;
-        let mock = server
+        let deploy_mock = server
             .mock("POST", "/deployments/filter")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"[{"name":"test-deploy","flow_name":"test_flow"}]"#)
+            .with_body(r#"[{"name":"test-deploy","flow_id":"flow-1"}]"#)
+            .create_async()
+            .await;
+        let flow_mock = server
+            .mock("POST", "/flows/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"id":"flow-1","name":"test_flow"}]"#)
             .create_async()
             .await;
 
@@ -182,7 +226,9 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0]["name"], "test-deploy");
-        mock.assert_async().await;
+        assert_eq!(result[0]["flow_name"], "test_flow");
+        deploy_mock.assert_async().await;
+        flow_mock.assert_async().await;
     }
 
     #[tokio::test]

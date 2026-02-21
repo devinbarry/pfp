@@ -5,6 +5,8 @@ pub struct Deployment {
     pub id: String,
     pub name: String,
     #[serde(default)]
+    pub flow_id: String,
+    #[serde(default)]
     pub flow_name: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -97,9 +99,22 @@ impl FlowRun {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LogEntry {
-    pub level: String,
+    pub level: u32,
     pub message: String,
     pub timestamp: String,
+}
+
+impl LogEntry {
+    pub fn level_name(&self) -> &str {
+        match self.level {
+            0..=9 => "TRACE",
+            10 => "DEBUG",
+            20 => "INFO",
+            30 => "WARNING",
+            40 => "ERROR",
+            _ => "CRITICAL",
+        }
+    }
 }
 
 #[cfg(test)]
@@ -206,9 +221,10 @@ mod tests {
     #[test]
     fn log_entry_deserializes() {
         let entry: LogEntry = serde_json::from_value(json!({
-            "level": "INFO", "message": "Flow started", "timestamp": "2026-02-21T17:34:05.301Z"
+            "level": 20, "message": "Flow started", "timestamp": "2026-02-21T17:34:05.301Z"
         }))
         .unwrap();
-        assert_eq!(entry.level, "INFO");
+        assert_eq!(entry.level, 20);
+        assert_eq!(entry.level_name(), "INFO");
     }
 }

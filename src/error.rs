@@ -11,9 +11,6 @@ pub enum PfpError {
     #[error("Config error: {0}")]
     Config(String),
 
-    #[error("No PREFECT_API_AUTH_STRING set")]
-    NoAuth,
-
     #[error("No PREFECT_API_URL found in profile")]
     NoApiUrl,
 
