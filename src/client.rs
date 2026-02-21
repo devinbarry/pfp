@@ -57,12 +57,7 @@ impl PrefectClient {
         Ok(response.json().await?)
     }
 
-    #[allow(dead_code)]
-    pub async fn patch_no_content(
-        &self,
-        path: &str,
-        body: &serde_json::Value,
-    ) -> Result<()> {
+    pub async fn patch_no_content(&self, path: &str, body: &serde_json::Value) -> Result<()> {
         let url = format!("{}{}", self.config.api_url, path);
         let response = self
             .client
@@ -91,7 +86,6 @@ impl PrefectClient {
         self.post("/deployments/filter", &body).await
     }
 
-    #[allow(dead_code)]
     pub async fn create_flow_run(
         &self,
         deployment_id: &str,
@@ -107,12 +101,10 @@ impl PrefectClient {
         .await
     }
 
-    #[allow(dead_code)]
     pub async fn get_flow_run(&self, flow_run_id: &str) -> Result<serde_json::Value> {
         self.get(&format!("/flow_runs/{}", flow_run_id)).await
     }
 
-    #[allow(dead_code)]
     pub async fn filter_flow_runs(
         &self,
         deployment_id: &str,
@@ -130,11 +122,7 @@ impl PrefectClient {
         self.post("/flow_runs/filter", &body).await
     }
 
-    #[allow(dead_code)]
-    pub async fn get_flow_run_logs(
-        &self,
-        flow_run_id: &str,
-    ) -> Result<Vec<serde_json::Value>> {
+    pub async fn get_flow_run_logs(&self, flow_run_id: &str) -> Result<Vec<serde_json::Value>> {
         let body = serde_json::json!({
             "logs": {
                 "flow_run_id": {
@@ -147,21 +135,12 @@ impl PrefectClient {
         self.post("/logs/filter", &body).await
     }
 
-    #[allow(dead_code)]
-    pub async fn set_deployment_paused(
-        &self,
-        deployment_id: &str,
-        paused: bool,
-    ) -> Result<()> {
+    pub async fn set_deployment_paused(&self, deployment_id: &str, paused: bool) -> Result<()> {
         let body = serde_json::json!({ "paused": paused });
-        self.patch_no_content(
-            &format!("/deployments/{}", deployment_id),
-            &body,
-        )
-        .await
+        self.patch_no_content(&format!("/deployments/{}", deployment_id), &body)
+            .await
     }
 
-    #[allow(dead_code)]
     pub async fn cancel_flow_run(&self, flow_run_id: &str) -> Result<serde_json::Value> {
         let body = serde_json::json!({
             "state": {
@@ -170,11 +149,8 @@ impl PrefectClient {
             },
             "force": true
         });
-        self.post(
-            &format!("/flow_runs/{}/set_state", flow_run_id),
-            &body,
-        )
-        .await
+        self.post(&format!("/flow_runs/{}/set_state", flow_run_id), &body)
+            .await
     }
 }
 

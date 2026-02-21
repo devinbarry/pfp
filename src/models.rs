@@ -32,7 +32,6 @@ impl Deployment {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct FlowRun {
     pub id: String,
@@ -53,7 +52,6 @@ pub struct FlowRun {
     pub parameters: serde_json::Value,
 }
 
-#[allow(dead_code)]
 impl FlowRun {
     pub fn is_terminal(&self) -> bool {
         matches!(
@@ -97,7 +95,6 @@ impl FlowRun {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LogEntry {
     pub level: String,

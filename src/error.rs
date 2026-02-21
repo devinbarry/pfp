@@ -1,7 +1,6 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-#[allow(dead_code)]
 pub enum PfpError {
     #[error("API error: {0}")]
     Api(String),
@@ -26,6 +25,16 @@ pub enum PfpError {
 
     #[error("Flow run failed: {0}")]
     FlowRunFailed(String),
+}
+
+impl PfpError {
+    /// Exit code: 1 for flow run failures, 2 for CLI/usage errors.
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            PfpError::FlowRunFailed(_) => 1,
+            _ => 2,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, PfpError>;

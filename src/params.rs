@@ -1,7 +1,6 @@
 use serde_json::Value;
 
 /// Parse a list of "key.path=value" strings into a nested JSON object.
-#[allow(dead_code)]
 pub fn build_params(sets: &[String]) -> Result<Value, String> {
     let mut root = serde_json::Map::new();
 
@@ -20,7 +19,6 @@ pub fn build_params(sets: &[String]) -> Result<Value, String> {
 }
 
 /// Merge `overrides` into `base` (deep merge at each level).
-#[allow(dead_code)]
 pub fn merge_params(base: &Value, overrides: &Value) -> Value {
     match (base, overrides) {
         (Value::Object(b), Value::Object(o)) => {
@@ -147,7 +145,10 @@ mod tests {
         let base = json!({"config": {"action": "plan", "dry_run": false}});
         let overrides = json!({"config": {"action": "destroy"}});
         let merged = merge_params(&base, &overrides);
-        assert_eq!(merged, json!({"config": {"action": "destroy", "dry_run": false}}));
+        assert_eq!(
+            merged,
+            json!({"config": {"action": "destroy", "dry_run": false}})
+        );
     }
 
     #[test]
@@ -155,7 +156,10 @@ mod tests {
         let base = json!({"environment": "prod"});
         let overrides = json!({"config": {"action": "plan"}});
         let merged = merge_params(&base, &overrides);
-        assert_eq!(merged, json!({"environment": "prod", "config": {"action": "plan"}}));
+        assert_eq!(
+            merged,
+            json!({"environment": "prod", "config": {"action": "plan"}})
+        );
     }
 
     #[test]

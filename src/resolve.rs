@@ -1,14 +1,9 @@
-#[allow(dead_code)]
 use crate::client::PrefectClient;
 use crate::error::{PfpError, Result};
 use crate::models::Deployment;
 
 /// Resolve a user query to a single deployment via unique substring match.
-#[allow(dead_code)]
-pub async fn resolve_deployment(
-    client: &PrefectClient,
-    query: &str,
-) -> Result<Deployment> {
+pub async fn resolve_deployment(client: &PrefectClient, query: &str) -> Result<Deployment> {
     let values = client.list_deployments().await?;
     let deployments: Vec<Deployment> = values
         .into_iter()
@@ -77,7 +72,10 @@ mod tests {
         let deps = sample_deployments();
         let matches = find_match(&deps, "happy-t");
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].full_name(), "happy_terraform/happy-terraform-prod");
+        assert_eq!(
+            matches[0].full_name(),
+            "happy_terraform/happy-terraform-prod"
+        );
     }
 
     #[test]

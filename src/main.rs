@@ -26,13 +26,53 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Run a deployment
+    Run {
+        /// Deployment name (substring match)
+        query: String,
+        #[arg(long)]
+        watch: bool,
+        #[arg(long = "set", num_args = 1)]
+        sets: Vec<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show recent flow runs for a deployment
+    Runs {
+        /// Deployment name (substring match)
+        query: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show logs for a flow run
+    Logs {
+        /// Flow run ID
+        flow_run_id: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Pause a deployment
+    Pause {
+        /// Deployment name (substring match)
+        query: String,
+    },
+    /// Resume a deployment
+    Resume {
+        /// Deployment name (substring match)
+        query: String,
+    },
+    /// Cancel a running flow run
+    Cancel {
+        /// Flow run ID
+        flow_run_id: String,
+    },
 }
 
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
         eprintln!("Error: {}", e);
-        std::process::exit(2);
+        std::process::exit(e.exit_code());
     }
 }
 
@@ -44,6 +84,41 @@ async fn run() -> Result<()> {
             let config = Config::load()?;
             let client = PrefectClient::new(config);
             commands::ls::run(client, json).await
+        }
+        Commands::Run {
+            query,
+            watch,
+            sets,
+            json,
+        } => {
+            let config = Config::load()?;
+            let client = PrefectClient::new(config);
+            commands::run::run(client, query, watch, sets, json).await
+        }
+        Commands::Runs { query, json } => {
+            let config = Config::load()?;
+            let client = PrefectClient::new(config);
+            commands::runs::run(client, query, json).await
+        }
+        Commands::Logs { flow_run_id, json } => {
+            let config = Config::load()?;
+            let client = PrefectClient::new(config);
+            commands::logs::run(client, flow_run_id, json).await
+        }
+        Commands::Pause { query } => {
+            let config = Config::load()?;
+            let client = PrefectClient::new(config);
+            commands::pause::run(client, query).await
+        }
+        Commands::Resume { query } => {
+            let config = Config::load()?;
+            let client = PrefectClient::new(config);
+            commands::resume::run(client, query).await
+        }
+        Commands::Cancel { flow_run_id } => {
+            let config = Config::load()?;
+            let client = PrefectClient::new(config);
+            commands::cancel::run(client, flow_run_id).await
         }
     }
 }
