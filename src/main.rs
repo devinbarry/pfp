@@ -48,6 +48,9 @@ enum Commands {
     Logs {
         /// Flow run ID
         flow_run_id: String,
+        /// Maximum number of log entries to fetch
+        #[arg(long)]
+        limit: Option<usize>,
         #[arg(long)]
         json: bool,
     },
@@ -100,10 +103,14 @@ async fn run() -> Result<()> {
             let client = PrefectClient::new(config);
             commands::runs::run(client, query, json).await
         }
-        Commands::Logs { flow_run_id, json } => {
+        Commands::Logs {
+            flow_run_id,
+            limit,
+            json,
+        } => {
             let config = Config::load()?;
             let client = PrefectClient::new(config);
-            commands::logs::run(client, flow_run_id, json).await
+            commands::logs::run(client, flow_run_id, limit, json).await
         }
         Commands::Pause { query } => {
             let config = Config::load()?;
