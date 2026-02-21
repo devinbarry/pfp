@@ -50,11 +50,12 @@ pub fn print_logs(logs: &[LogEntry]) {
         } else {
             &log.timestamp
         };
-        let level = match log.level.as_str() {
-            "ERROR" | "CRITICAL" => log.level.red(),
-            "WARNING" => log.level.yellow(),
-            "INFO" => log.level.blue(),
-            _ => log.level.dimmed(),
+        let name = log.level_name();
+        let level = match name {
+            "ERROR" | "CRITICAL" => name.red(),
+            "WARNING" => name.yellow(),
+            "INFO" => name.blue(),
+            _ => name.dimmed(),
         };
         println!("{} | {:<8} | {}", ts, level, log.message);
     }

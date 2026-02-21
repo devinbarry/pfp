@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[derive(Debug)]
 pub struct Config {
     pub api_url: String,
-    pub auth_header: String,
+    pub auth_header: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -23,7 +23,7 @@ struct Profile {
 impl Config {
     pub fn load() -> Result<Self> {
         let api_url = Self::resolve_api_url()?;
-        let auth_header = Self::resolve_auth()?;
+        let auth_header = Self::resolve_auth();
         Ok(Config {
             api_url,
             auth_header,
@@ -47,12 +47,11 @@ impl Config {
         profile.api_url.ok_or(PfpError::NoApiUrl)
     }
 
-    fn resolve_auth() -> Result<String> {
-        let auth_string = std::env::var("PREFECT_API_AUTH_STRING").map_err(|_| PfpError::NoAuth)?;
-
+    fn resolve_auth() -> Option<String> {
+        let auth_string = std::env::var("PREFECT_API_AUTH_STRING").ok()?;
         use base64::Engine;
         let encoded = base64::engine::general_purpose::STANDARD.encode(auth_string.as_bytes());
-        Ok(format!("Basic {}", encoded))
+        Some(format!("Basic {}", encoded))
     }
 
     fn profiles_path() -> PathBuf {
@@ -106,12 +105,12 @@ mod tests {
 
     #[test]
     #[serial]
-    fn resolve_auth_missing_returns_error() {
+    fn resolve_auth_missing_returns_none() {
         unsafe {
             std::env::remove_var("PREFECT_API_AUTH_STRING");
         }
         let result = Config::resolve_auth();
-        assert!(matches!(result, Err(PfpError::NoAuth)));
+        assert!(result.is_none());
     }
 
     #[test]
