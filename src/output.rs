@@ -13,10 +13,7 @@ pub fn state_color(state: &str) -> colored::ColoredString {
 }
 
 pub fn print_deployments_table(deployments: &[Deployment]) {
-    println!(
-        "{:<50} {:<8} WORK POOL",
-        "DEPLOYMENT", "STATUS"
-    );
+    println!("{:<50} {:<8} WORK POOL", "DEPLOYMENT", "STATUS");
     for d in deployments {
         let status = state_color(d.status_str().to_uppercase().as_str());
         println!(
@@ -28,7 +25,6 @@ pub fn print_deployments_table(deployments: &[Deployment]) {
     }
 }
 
-#[allow(dead_code)]
 pub fn print_flow_runs_table(runs: &[FlowRun]) {
     println!(
         "{:<26} {:<12} {:<20} {:<10} ID",
@@ -47,7 +43,6 @@ pub fn print_flow_runs_table(runs: &[FlowRun]) {
     }
 }
 
-#[allow(dead_code)]
 pub fn print_logs(logs: &[LogEntry]) {
     for log in logs {
         let ts = if log.timestamp.len() >= 19 {
@@ -65,7 +60,6 @@ pub fn print_logs(logs: &[LogEntry]) {
     }
 }
 
-#[allow(dead_code)]
 pub fn print_watch_state(state_name: &str, timestamp: &str) {
     let ts = if timestamp.len() >= 19 {
         &timestamp[11..19]

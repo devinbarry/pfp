@@ -48,8 +48,7 @@ impl Config {
     }
 
     fn resolve_auth() -> Result<String> {
-        let auth_string =
-            std::env::var("PREFECT_API_AUTH_STRING").map_err(|_| PfpError::NoAuth)?;
+        let auth_string = std::env::var("PREFECT_API_AUTH_STRING").map_err(|_| PfpError::NoAuth)?;
 
         use base64::Engine;
         let encoded = base64::engine::general_purpose::STANDARD.encode(auth_string.as_bytes());
@@ -65,9 +64,8 @@ impl Config {
 
     fn read_profiles() -> Result<ProfilesFile> {
         let path = Self::profiles_path();
-        let content = std::fs::read_to_string(&path).map_err(|e| {
-            PfpError::Config(format!("Cannot read {}: {}", path.display(), e))
-        })?;
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| PfpError::Config(format!("Cannot read {}: {}", path.display(), e)))?;
         toml::from_str(&content)
             .map_err(|e| PfpError::Config(format!("Cannot parse {}: {}", path.display(), e)))
     }
