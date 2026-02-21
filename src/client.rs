@@ -159,17 +159,42 @@ impl PrefectClient {
         self.post("/flow_runs/filter", &body).await
     }
 
-    pub async fn get_flow_run_logs(&self, flow_run_id: &str) -> Result<Vec<serde_json::Value>> {
-        let body = serde_json::json!({
-            "logs": {
-                "flow_run_id": {
-                    "any_": [flow_run_id]
-                }
-            },
-            "sort": "TIMESTAMP_ASC",
-            "limit": 200
-        });
-        self.post("/logs/filter", &body).await
+    pub async fn get_flow_run_logs(
+        &self,
+        flow_run_id: &str,
+        limit: usize,
+    ) -> Result<Vec<serde_json::Value>> {
+        const PAGE_SIZE: usize = 200;
+        let mut all_logs = Vec::new();
+        let mut offset: usize = 0;
+
+        loop {
+            let remaining = limit - all_logs.len();
+            let page_limit = remaining.min(PAGE_SIZE);
+
+            let body = serde_json::json!({
+                "logs": {
+                    "flow_run_id": {
+                        "any_": [flow_run_id]
+                    }
+                },
+                "sort": "TIMESTAMP_ASC",
+                "limit": page_limit,
+                "offset": offset
+            });
+
+            let page: Vec<serde_json::Value> = self.post("/logs/filter", &body).await?;
+            let page_len = page.len();
+            all_logs.extend(page);
+
+            if page_len < page_limit || all_logs.len() >= limit {
+                break;
+            }
+
+            offset += page_len;
+        }
+
+        Ok(all_logs)
     }
 
     pub async fn set_deployment_paused(&self, deployment_id: &str, paused: bool) -> Result<()> {
@@ -300,6 +325,96 @@ mod tests {
         let result = client.set_deployment_paused("dep-id", true).await;
 
         assert!(result.is_ok());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn get_flow_run_logs_single_page() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/logs/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"level":20,"message":"hello","timestamp":"2026-01-01T00:00:00Z"},{"level":20,"message":"world","timestamp":"2026-01-01T00:00:01Z"}]"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+        let result = client.get_flow_run_logs("run-1", 10_000).await.unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0]["message"], "hello");
+        assert_eq!(result[1]["message"], "world");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn get_flow_run_logs_multi_page() {
+        let mut server = mockito::Server::new_async().await;
+
+        // Build a response with exactly 200 entries (one full page)
+        let page1: Vec<serde_json::Value> = (0..200)
+            .map(|i| serde_json::json!({"level":20,"message":format!("msg-{}", i),"timestamp":"2026-01-01T00:00:00Z"}))
+            .collect();
+        let page2 = vec![
+            serde_json::json!({"level":20,"message":"msg-200","timestamp":"2026-01-01T00:00:01Z"}),
+            serde_json::json!({"level":20,"message":"msg-201","timestamp":"2026-01-01T00:00:02Z"}),
+        ];
+
+        let mock1 = server
+            .mock("POST", "/logs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(r#"{"offset":0}"#.to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&page1).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let mock2 = server
+            .mock("POST", "/logs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(r#"{"offset":200}"#.to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&page2).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+        let result = client.get_flow_run_logs("run-1", 10_000).await.unwrap();
+
+        assert_eq!(result.len(), 202);
+        assert_eq!(result[0]["message"], "msg-0");
+        assert_eq!(result[201]["message"], "msg-201");
+        mock1.assert_async().await;
+        mock2.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn get_flow_run_logs_respects_limit() {
+        let mut server = mockito::Server::new_async().await;
+
+        // Return 150 entries — but we set limit to 150, which is less than page size 200
+        // so the request should ask for limit=150 and get 150 back, then stop
+        let entries: Vec<serde_json::Value> = (0..150)
+            .map(|i| serde_json::json!({"level":20,"message":format!("msg-{}", i),"timestamp":"2026-01-01T00:00:00Z"}))
+            .collect();
+
+        let mock = server
+            .mock("POST", "/logs/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&entries).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+        let result = client.get_flow_run_logs("run-1", 150).await.unwrap();
+
+        assert_eq!(result.len(), 150);
         mock.assert_async().await;
     }
 }
