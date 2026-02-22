@@ -62,7 +62,7 @@ release-finish:
     git commit -m "chore: release v${VERSION}"
     git tag -a "v${VERSION}" -m "v${VERSION}"
     git push && git push --tags
-    cargo install --path . --root ~/.local --force
+    cargo install --path . --force
     echo ""
     echo "Released v${VERSION}"
 
@@ -81,7 +81,3 @@ fmt:
 # Install binary to ~/.cargo/bin (cargo default)
 install:
     cargo install --path . --force
-
-# Install binary to ~/.local/bin
-install-local:
-    cargo install --path . --root ~/.local --force
