@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-02-22
+
+### Fixed
+
+- Pinned Rust toolchain to 1.93.1 (`rust-toolchain.toml`) and CI images to prevent formatting drift between local and CI environments
+- Pre-commit hook now runs `cargo fmt --check` before clippy, catching format issues before push
+
+### Added
+
+- `just check` recipe that mirrors the full CI pipeline locally (fmt, clippy, test)
+
 ## [0.1.1] - 2026-02-22
 
 ### Added
