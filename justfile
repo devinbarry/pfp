@@ -78,6 +78,12 @@ lint:
 fmt:
     cargo fmt
 
+# Run all CI checks locally (fmt, clippy, test)
+check:
+    cargo fmt --check
+    cargo clippy -- -D warnings
+    cargo test
+
 # Install binary to ~/.cargo/bin (cargo default)
 install:
     cargo install --path . --force
