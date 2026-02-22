@@ -364,7 +364,9 @@ mod tests {
 
         let mock1 = server
             .mock("POST", "/logs/filter")
-            .match_body(mockito::Matcher::PartialJsonString(r#"{"offset":0}"#.to_string()))
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"offset":0}"#.to_string(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(serde_json::to_string(&page1).unwrap())
@@ -374,7 +376,9 @@ mod tests {
 
         let mock2 = server
             .mock("POST", "/logs/filter")
-            .match_body(mockito::Matcher::PartialJsonString(r#"{"offset":200}"#.to_string()))
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"offset":200}"#.to_string(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(serde_json::to_string(&page2).unwrap())

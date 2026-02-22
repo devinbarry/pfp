@@ -12,7 +12,9 @@ pub async fn run(
     json: bool,
 ) -> Result<()> {
     let effective_limit = limit.unwrap_or(DEFAULT_LIMIT);
-    let values = client.get_flow_run_logs(&flow_run_id, effective_limit).await?;
+    let values = client
+        .get_flow_run_logs(&flow_run_id, effective_limit)
+        .await?;
     let logs: Vec<LogEntry> = values
         .into_iter()
         .filter_map(|v| serde_json::from_value(v).ok())
