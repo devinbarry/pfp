@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-02-22
+
+### Added
+
+- `pfp logs` now fetches all log entries via automatic pagination (previously capped at 200)
+- `--limit <N>` flag on `pfp logs` to cap the number of entries fetched
+- 10,000-entry safety cap with stderr warning when hit
+
+### Changed
+
+- Standardized install target to `~/.cargo/bin` (removed `install-local`)
+
 ## [0.1.0] - 2026-02-21
 
 Initial release.
