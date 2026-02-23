@@ -159,7 +159,6 @@ impl PrefectClient {
         self.post("/flow_runs/filter", &body).await
     }
 
-    #[allow(dead_code)] // Used in resolve_flow_run (Task 3)
     pub async fn filter_flow_runs_global(&self, limit: usize) -> Result<Vec<serde_json::Value>> {
         let body = serde_json::json!({
             "sort": "START_TIME_DESC",
