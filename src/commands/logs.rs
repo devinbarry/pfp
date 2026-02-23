@@ -2,6 +2,7 @@ use crate::client::PrefectClient;
 use crate::error::Result;
 use crate::models::LogEntry;
 use crate::output;
+use crate::resolve;
 
 const DEFAULT_LIMIT: usize = 10_000;
 
@@ -11,9 +12,10 @@ pub async fn run(
     limit: Option<usize>,
     json: bool,
 ) -> Result<()> {
+    let resolved_id = resolve::resolve_flow_run(&client, &flow_run_id).await?;
     let effective_limit = limit.unwrap_or(DEFAULT_LIMIT);
     let values = client
-        .get_flow_run_logs(&flow_run_id, effective_limit)
+        .get_flow_run_logs(&resolved_id, effective_limit)
         .await?;
     let logs: Vec<LogEntry> = values
         .into_iter()
@@ -30,7 +32,7 @@ pub async fn run(
     if json {
         output::print_json(&logs);
     } else if logs.is_empty() {
-        println!("No logs found for flow run {}", flow_run_id);
+        println!("No logs found for flow run {}", resolved_id);
     } else {
         output::print_logs(&logs);
     }
