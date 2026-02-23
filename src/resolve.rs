@@ -42,14 +42,12 @@ pub async fn resolve_deployment(client: &PrefectClient, query: &str) -> Result<D
 }
 
 /// Check if input looks like a complete UUID (with or without hyphens).
-#[allow(dead_code)] // Wired in Task 4
 pub fn is_full_uuid(input: &str) -> bool {
     let hex_only = input.replace('-', "");
     hex_only.len() == 32 && hex_only.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Resolve a user-provided flow run ID (possibly a short prefix) to a full UUID.
-#[allow(dead_code)] // Wired in Task 4
 pub async fn resolve_flow_run(client: &PrefectClient, input: &str) -> Result<String> {
     if is_full_uuid(input) {
         return Ok(input.to_string());
