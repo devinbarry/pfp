@@ -59,14 +59,17 @@ pub async fn resolve_flow_run(client: &PrefectClient, input: &str) -> Result<Str
         .filter_map(|v| serde_json::from_value(v).ok())
         .collect();
 
+    let input_lower = input.to_lowercase();
     let matches: Vec<&FlowRun> = runs
         .iter()
-        .filter(|r| r.id.starts_with(input) || r.id.replace('-', "").starts_with(input))
+        .filter(|r| {
+            r.id.starts_with(&input_lower) || r.id.replace('-', "").starts_with(&input_lower)
+        })
         .collect();
 
     match matches.len() {
         0 => Err(PfpError::NoMatch(format!(
-            "no flow run matching '{}'",
+            "no flow run matching '{}' in the last 100 runs. Try using the full UUID.",
             input
         ))),
         1 => Ok(matches[0].id.clone()),
@@ -180,8 +183,11 @@ mod tests {
     }
 
     fn find_flow_run_match<'a>(runs: &'a [FlowRun], prefix: &str) -> Vec<&'a FlowRun> {
+        let prefix_lower = prefix.to_lowercase();
         runs.iter()
-            .filter(|r| r.id.starts_with(prefix) || r.id.replace('-', "").starts_with(prefix))
+            .filter(|r| {
+                r.id.starts_with(&prefix_lower) || r.id.replace('-', "").starts_with(&prefix_lower)
+            })
             .collect()
     }
 
@@ -212,6 +218,14 @@ mod tests {
         let runs = sample_flow_runs();
         let matches = find_flow_run_match(&runs, "9d9ca60c-abcd-4300-9999-abcdef012345");
         assert_eq!(matches.len(), 1);
+    }
+
+    #[test]
+    fn flow_run_uppercase_prefix_match() {
+        let runs = sample_flow_runs();
+        let matches = find_flow_run_match(&runs, "9D9CA60C");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].id, "9d9ca60c-abcd-4300-9999-abcdef012345");
     }
 
     #[test]
@@ -343,6 +357,24 @@ mod tests {
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), PfpError::NoMatch(msg) if msg.contains("deadbeef")));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn resolve_uppercase_prefix() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/flow_runs/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_flow_runs_json())
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+        let result = super::resolve_flow_run(&client, "9D9CA60C").await;
+
+        assert_eq!(result.unwrap(), "9d9ca60c-abcd-4300-9999-abcdef012345");
         mock.assert_async().await;
     }
 }
