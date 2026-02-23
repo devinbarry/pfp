@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2026-02-23
+
+### Added
+
+- UUID prefix support in `pfp logs` and `pfp cancel` — short IDs from `pfp runs` output now work directly (e.g., `pfp logs 9d9ca60c`)
+- Case-insensitive prefix matching
+- Helpful error message when prefix not found, suggesting full UUID
+- Integration test infrastructure with `assert_cmd` and CLI smoke tests
+- 24 new tests (69 total)
+
+### Changed
+
+- `NoMatch` error is now generic, supporting both deployment and flow run resolution contexts
+
 ## [0.1.2] - 2026-02-22
 
 ### Fixed
