@@ -16,7 +16,10 @@ pub async fn resolve_deployment(client: &PrefectClient, query: &str) -> Result<D
         .collect();
 
     match matches.len() {
-        0 => Err(PfpError::NoMatch(query.to_string())),
+        0 => Err(PfpError::NoMatch(format!(
+            "no deployment matching '{}'",
+            query
+        ))),
         1 => {
             let idx = deployments
                 .iter()
