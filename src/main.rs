@@ -46,7 +46,7 @@ enum Commands {
     },
     /// Show logs for a flow run
     Logs {
-        /// Flow run ID
+        /// Flow run ID or UUID prefix
         flow_run_id: String,
         /// Maximum number of log entries to fetch
         #[arg(long)]
@@ -66,7 +66,7 @@ enum Commands {
     },
     /// Cancel a running flow run
     Cancel {
-        /// Flow run ID
+        /// Flow run ID or UUID prefix
         flow_run_id: String,
     },
 }
