@@ -233,4 +233,116 @@ mod tests {
     fn is_full_uuid_not_hex() {
         assert!(!super::is_full_uuid("not-a-uuid-at-all-zzzz-zzzzzzzzzzzz"));
     }
+
+    // -- Async integration tests (mockito HTTP server) --
+
+    use crate::client::PrefectClient;
+    use crate::config::Config;
+    use crate::error::PfpError;
+
+    fn test_client(server: &mockito::Server) -> PrefectClient {
+        let config = Config {
+            api_url: server.url(),
+            auth_header: Some("Basic dGVzdDp0ZXN0".to_string()),
+        };
+        PrefectClient::new(config)
+    }
+
+    fn mock_flow_runs_json() -> String {
+        serde_json::to_string(&vec![
+            json!({
+                "id": "171a3f55-e9a5-4100-a2dd-efe5c711f847",
+                "name": "cool-run-1",
+                "state_type": "COMPLETED",
+                "state_name": "Completed"
+            }),
+            json!({
+                "id": "171a3f55-ffff-4200-b3ee-1234567890ab",
+                "name": "cool-run-2",
+                "state_type": "FAILED",
+                "state_name": "Failed"
+            }),
+            json!({
+                "id": "9d9ca60c-abcd-4300-9999-abcdef012345",
+                "name": "other-run",
+                "state_type": "RUNNING",
+                "state_name": "Running"
+            }),
+        ])
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn resolve_full_uuid_skips_api() {
+        // No mock server needed — full UUID should return immediately
+        let server = mockito::Server::new_async().await;
+        let client = test_client(&server);
+        // No mocks registered, so any API call would fail
+        let result = super::resolve_flow_run(&client, "171a3f55-e9a5-4100-a2dd-efe5c711f847").await;
+        assert_eq!(result.unwrap(), "171a3f55-e9a5-4100-a2dd-efe5c711f847");
+    }
+
+    #[tokio::test]
+    async fn resolve_unique_prefix() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/flow_runs/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_flow_runs_json())
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+        let result = super::resolve_flow_run(&client, "9d9ca60c").await;
+
+        assert_eq!(result.unwrap(), "9d9ca60c-abcd-4300-9999-abcdef012345");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn resolve_ambiguous_prefix() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/flow_runs/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_flow_runs_json())
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+        let result = super::resolve_flow_run(&client, "171a3f55").await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            PfpError::AmbiguousMatch { query, candidates } => {
+                assert_eq!(query, "171a3f55");
+                assert!(candidates.contains("171a3f55"));
+                assert!(candidates.contains("Completed"));
+                assert!(candidates.contains("Failed"));
+            }
+            other => panic!("Expected AmbiguousMatch, got: {:?}", other),
+        }
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn resolve_no_match_prefix() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/flow_runs/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_flow_runs_json())
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+        let result = super::resolve_flow_run(&client, "deadbeef").await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), PfpError::NoMatch(msg) if msg.contains("deadbeef")));
+        mock.assert_async().await;
+    }
 }
