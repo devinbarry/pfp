@@ -159,6 +159,15 @@ impl PrefectClient {
         self.post("/flow_runs/filter", &body).await
     }
 
+    #[allow(dead_code)] // Used in resolve_flow_run (Task 3)
+    pub async fn filter_flow_runs_global(&self, limit: usize) -> Result<Vec<serde_json::Value>> {
+        let body = serde_json::json!({
+            "sort": "START_TIME_DESC",
+            "limit": limit
+        });
+        self.post("/flow_runs/filter", &body).await
+    }
+
     pub async fn get_flow_run_logs(
         &self,
         flow_run_id: &str,
@@ -419,6 +428,47 @@ mod tests {
         let result = client.get_flow_run_logs("run-1", 150).await.unwrap();
 
         assert_eq!(result.len(), 150);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn filter_flow_runs_global_success() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/flow_runs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"sort":"START_TIME_DESC","limit":50}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"id":"aaa-111","name":"run-1","state_type":"COMPLETED"},{"id":"bbb-222","name":"run-2","state_type":"RUNNING"}]"#)
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+        let result = client.filter_flow_runs_global(50).await.unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0]["id"], "aaa-111");
+        assert_eq!(result[1]["id"], "bbb-222");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn filter_flow_runs_global_api_error() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/flow_runs/filter")
+            .with_status(500)
+            .with_body("Internal Server Error")
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+        let result = client.filter_flow_runs_global(50).await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), PfpError::Api(ref msg) if msg.contains("500")));
         mock.assert_async().await;
     }
 }
