@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-04-02
+
+### Added
+
+- `pfp logs --follow` / `-f` — continuously poll for new log entries, like `tail -f`
+- Automatically exits when the flow run reaches a terminal state (completed, failed, cancelled, crashed)
+- Drains any straggler logs after terminal detection so nothing is lost
+- 3 new follow-mode integration tests (73 total)
+
+### Changed
+
+- `get_flow_run_logs` now accepts a `start_offset` parameter for incremental fetching
+
 ## [0.1.3] - 2026-02-23
 
 ### Added
