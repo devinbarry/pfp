@@ -21,11 +21,11 @@ pub async fn run(
     let values = client
         .get_flow_run_logs(&resolved_id, effective_limit, 0)
         .await?;
+    let mut total_seen = values.len();
     let logs: Vec<LogEntry> = values
         .into_iter()
         .filter_map(|v| serde_json::from_value(v).ok())
         .collect();
-    let mut total_seen = logs.len();
 
     if limit.is_none() && logs.len() >= DEFAULT_LIMIT && !follow {
         eprintln!(
@@ -56,13 +56,14 @@ pub async fn run(
         let new_values = client
             .get_flow_run_logs(&resolved_id, DEFAULT_LIMIT, total_seen)
             .await?;
+        let fetched = new_values.len();
         let new_logs: Vec<LogEntry> = new_values
             .into_iter()
             .filter_map(|v| serde_json::from_value(v).ok())
             .collect();
 
-        if !new_logs.is_empty() {
-            total_seen += new_logs.len();
+        if fetched > 0 {
+            total_seen += fetched;
             if json {
                 output::print_json(&new_logs);
             } else {
@@ -76,16 +77,20 @@ pub async fn run(
             serde_json::from_value(flow_run_value).map_err(|e| PfpError::Api(e.to_string()))?;
 
         if flow_run.is_terminal() {
-            // Final fetch to catch any stragglers
-            let final_values = client
-                .get_flow_run_logs(&resolved_id, DEFAULT_LIMIT, total_seen)
-                .await?;
-            let final_logs: Vec<LogEntry> = final_values
-                .into_iter()
-                .filter_map(|v| serde_json::from_value(v).ok())
-                .collect();
-
-            if !final_logs.is_empty() {
+            // Drain any remaining logs after terminal state
+            loop {
+                let final_values = client
+                    .get_flow_run_logs(&resolved_id, DEFAULT_LIMIT, total_seen)
+                    .await?;
+                let fetched = final_values.len();
+                if fetched == 0 {
+                    break;
+                }
+                total_seen += fetched;
+                let final_logs: Vec<LogEntry> = final_values
+                    .into_iter()
+                    .filter_map(|v| serde_json::from_value(v).ok())
+                    .collect();
                 if json {
                     output::print_json(&final_logs);
                 } else {
@@ -259,6 +264,90 @@ mod tests {
         assert!(result.is_ok());
         logs_mock_initial.assert_async().await;
         logs_mock_poll.assert_async().await;
+        state_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn follow_drains_straggler_logs_after_terminal() {
+        let mut server = mockito::Server::new_async().await;
+        let flow_run_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
+        // Initial fetch returns 1 log
+        let logs_mock_initial = server
+            .mock("POST", "/logs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"offset":0}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"level":20,"message":"Starting","timestamp":"2026-01-01T00:00:00Z"}]"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        // Poll: 1 new log at offset 1, then terminal detected
+        let logs_mock_poll = server
+            .mock("POST", "/logs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"offset":1}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"level":20,"message":"Working","timestamp":"2026-01-01T00:00:01Z"}]"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        // Straggler fetch at offset 2: returns a log that arrived after terminal
+        let logs_mock_straggler = server
+            .mock("POST", "/logs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"offset":2}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"[{"level":20,"message":"Final cleanup","timestamp":"2026-01-01T00:00:02Z"}]"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        // Drain loop: empty at offset 3, exits
+        let logs_mock_empty = server
+            .mock("POST", "/logs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"offset":3}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[]"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        // Flow run is already completed on first check
+        let state_mock = server
+            .mock("GET", format!("/flow_runs/{}", flow_run_id).as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(format!(
+                r#"{{"id":"{}","name":"test-run","state_type":"COMPLETED","state_name":"Completed"}}"#,
+                flow_run_id
+            ))
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+
+        let result = run(client, flow_run_id.to_string(), None, true, false).await;
+
+        assert!(result.is_ok());
+        logs_mock_initial.assert_async().await;
+        logs_mock_poll.assert_async().await;
+        logs_mock_straggler.assert_async().await;
+        logs_mock_empty.assert_async().await;
         state_mock.assert_async().await;
     }
 }
