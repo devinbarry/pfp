@@ -10,6 +10,7 @@ pub async fn run(
     client: PrefectClient,
     flow_run_id: String,
     limit: Option<usize>,
+    _follow: bool,
     json: bool,
 ) -> Result<()> {
     let resolved_id = resolve::resolve_flow_run(&client, &flow_run_id).await?;
