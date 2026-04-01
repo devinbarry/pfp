@@ -99,3 +99,166 @@ pub async fn run(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    fn test_client(server: &mockito::Server) -> PrefectClient {
+        let config = Config {
+            api_url: server.url(),
+            auth_header: Some("Basic dGVzdDp0ZXN0".to_string()),
+        };
+        PrefectClient::new(config)
+    }
+
+    #[tokio::test]
+    async fn follow_polls_and_stops_on_terminal() {
+        let mut server = mockito::Server::new_async().await;
+        let flow_run_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
+        // Poll 1: initial fetch returns 2 logs
+        let logs_mock_1 = server
+            .mock("POST", "/logs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"offset":0}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"[
+                {"level":20,"message":"Starting","timestamp":"2026-01-01T00:00:00Z"},
+                {"level":20,"message":"Working","timestamp":"2026-01-01T00:00:01Z"}
+            ]"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        // Poll 2: new logs from offset 2
+        let logs_mock_2 = server
+            .mock("POST", "/logs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"offset":2}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"[
+                {"level":20,"message":"Almost done","timestamp":"2026-01-01T00:00:02Z"}
+            ]"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        // Poll 3 + final fetch after terminal: no new logs from offset 3 (hit twice)
+        let logs_mock_3 = server
+            .mock("POST", "/logs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"offset":3}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[]"#)
+            .expect(2)
+            .create_async()
+            .await;
+
+        // Flow run state: first check returns RUNNING, second returns COMPLETED
+        let state_mock_running = server
+            .mock("GET", format!("/flow_runs/{}", flow_run_id).as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(format!(
+                r#"{{"id":"{}","name":"test-run","state_type":"RUNNING","state_name":"Running"}}"#,
+                flow_run_id
+            ))
+            .expect(1)
+            .create_async()
+            .await;
+
+        let state_mock_completed = server
+            .mock("GET", format!("/flow_runs/{}", flow_run_id).as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(format!(
+                r#"{{"id":"{}","name":"test-run","state_type":"COMPLETED","state_name":"Completed"}}"#,
+                flow_run_id
+            ))
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+
+        // Run with follow=true — should complete without hanging
+        let result = run(client, flow_run_id.to_string(), None, true, false).await;
+
+        assert!(result.is_ok());
+        logs_mock_1.assert_async().await;
+        logs_mock_2.assert_async().await;
+        logs_mock_3.assert_async().await;
+        state_mock_running.assert_async().await;
+        state_mock_completed.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn follow_stops_immediately_if_already_terminal() {
+        let mut server = mockito::Server::new_async().await;
+        let flow_run_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
+        // Initial fetch returns logs
+        let logs_mock_initial = server
+            .mock("POST", "/logs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"offset":0}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"[
+                {"level":20,"message":"Done","timestamp":"2026-01-01T00:00:00Z"}
+            ]"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        // Follow poll: no new logs at offset 1
+        let logs_mock_poll = server
+            .mock("POST", "/logs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"offset":1}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[]"#)
+            .expect(2) // once for poll, once for final fetch
+            .create_async()
+            .await;
+
+        // Flow run is already completed
+        let state_mock = server
+            .mock("GET", format!("/flow_runs/{}", flow_run_id).as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(format!(
+                r#"{{"id":"{}","name":"test-run","state_type":"COMPLETED","state_name":"Completed"}}"#,
+                flow_run_id
+            ))
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+
+        let result = run(client, flow_run_id.to_string(), None, true, false).await;
+
+        assert!(result.is_ok());
+        logs_mock_initial.assert_async().await;
+        logs_mock_poll.assert_async().await;
+        state_mock.assert_async().await;
+    }
+}
