@@ -171,10 +171,11 @@ impl PrefectClient {
         &self,
         flow_run_id: &str,
         limit: usize,
+        start_offset: usize,
     ) -> Result<Vec<serde_json::Value>> {
         const PAGE_SIZE: usize = 200;
         let mut all_logs = Vec::new();
-        let mut offset: usize = 0;
+        let mut offset: usize = start_offset;
 
         loop {
             let remaining = limit - all_logs.len();
@@ -349,7 +350,7 @@ mod tests {
             .await;
 
         let client = test_client(&server);
-        let result = client.get_flow_run_logs("run-1", 10_000).await.unwrap();
+        let result = client.get_flow_run_logs("run-1", 10_000, 0).await.unwrap();
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0]["message"], "hello");
@@ -395,7 +396,7 @@ mod tests {
             .await;
 
         let client = test_client(&server);
-        let result = client.get_flow_run_logs("run-1", 10_000).await.unwrap();
+        let result = client.get_flow_run_logs("run-1", 10_000, 0).await.unwrap();
 
         assert_eq!(result.len(), 202);
         assert_eq!(result[0]["message"], "msg-0");
@@ -424,9 +425,33 @@ mod tests {
             .await;
 
         let client = test_client(&server);
-        let result = client.get_flow_run_logs("run-1", 150).await.unwrap();
+        let result = client.get_flow_run_logs("run-1", 150, 0).await.unwrap();
 
         assert_eq!(result.len(), 150);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn get_flow_run_logs_from_offset() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/logs/filter")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"offset":5}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"level":20,"message":"new-msg","timestamp":"2026-01-01T00:01:00Z"}]"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+        let result = client.get_flow_run_logs("run-1", 100, 5).await.unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0]["message"], "new-msg");
         mock.assert_async().await;
     }
 

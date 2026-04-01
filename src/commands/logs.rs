@@ -16,7 +16,7 @@ pub async fn run(
     let resolved_id = resolve::resolve_flow_run(&client, &flow_run_id).await?;
     let effective_limit = limit.unwrap_or(DEFAULT_LIMIT);
     let values = client
-        .get_flow_run_logs(&resolved_id, effective_limit)
+        .get_flow_run_logs(&resolved_id, effective_limit, 0)
         .await?;
     let logs: Vec<LogEntry> = values
         .into_iter()
