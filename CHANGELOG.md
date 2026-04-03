@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-04-03
+
+### Added
+
+- JSONL invocation logging — every CLI command is logged to `~/.pfp/pfp.jsonl` with version, timestamp, subcommand, args, outcome, error message, and duration
+- Automatic log rotation at 25 MB with 10 rotated files retained
+- `PFP_LOG_MAX_BYTES` env var to configure rotation threshold
+- 6 new logger tests (84 total)
+
 ## [0.2.0] - 2026-04-02
 
 ### Added
