@@ -2,6 +2,7 @@ mod client;
 mod commands;
 mod config;
 mod error;
+mod logger;
 mod models;
 mod output;
 mod params;
@@ -11,6 +12,7 @@ use clap::{Parser, Subcommand};
 use client::PrefectClient;
 use config::Config;
 use error::Result;
+use std::time::Instant;
 
 #[derive(Parser)]
 #[command(name = "pfp", version, about = "Prefect CLI")]
@@ -76,15 +78,57 @@ enum Commands {
 
 #[tokio::main]
 async fn main() {
-    if let Err(e) = run().await {
+    let cli = Cli::parse();
+    let (cmd_name, cmd_args) = describe_command(&cli.command);
+    let start = Instant::now();
+    let result = run(cli).await;
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    logger::log_invocation(&cmd_name, cmd_args, &result, duration_ms);
+
+    if let Err(e) = result {
         eprintln!("Error: {}", e);
         std::process::exit(e.exit_code());
     }
 }
 
-async fn run() -> Result<()> {
-    let cli = Cli::parse();
+/// Extract subcommand name and args for logging.
+/// Note: --set values are logged in plaintext (same exposure as shell history).
+fn describe_command(cmd: &Commands) -> (String, serde_json::Value) {
+    match cmd {
+        Commands::Ls { json } => ("ls".into(), serde_json::json!({ "json": json })),
+        Commands::Run {
+            query,
+            watch,
+            sets,
+            json,
+        } => (
+            "run".into(),
+            serde_json::json!({ "query": query, "watch": watch, "sets": sets, "json": json }),
+        ),
+        Commands::Runs { query, json } => (
+            "runs".into(),
+            serde_json::json!({ "query": query, "json": json }),
+        ),
+        Commands::Logs {
+            flow_run_id,
+            limit,
+            follow,
+            json,
+        } => (
+            "logs".into(),
+            serde_json::json!({ "flow_run_id": flow_run_id, "limit": limit, "follow": follow, "json": json }),
+        ),
+        Commands::Pause { query } => ("pause".into(), serde_json::json!({ "query": query })),
+        Commands::Resume { query } => ("resume".into(), serde_json::json!({ "query": query })),
+        Commands::Cancel { flow_run_id } => (
+            "cancel".into(),
+            serde_json::json!({ "flow_run_id": flow_run_id }),
+        ),
+    }
+}
 
+async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Ls { json } => {
             let config = Config::load()?;
