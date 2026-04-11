@@ -48,6 +48,11 @@ fn auto_type(val: &str) -> Value {
             return Value::Number(num);
         }
     }
+    if val.starts_with('[') || val.starts_with('{') {
+        if let Ok(parsed) = serde_json::from_str::<Value>(val) {
+            return parsed;
+        }
+    }
     Value::String(val.to_string())
 }
 
@@ -166,5 +171,28 @@ mod tests {
     fn deep_dotted_path() {
         let result = build_params(&["a.b.c=deep".to_string()]).unwrap();
         assert_eq!(result, json!({"a": {"b": {"c": "deep"}}}));
+    }
+
+    #[test]
+    fn auto_type_json_array() {
+        assert_eq!(auto_type(r#"["a","b"]"#), json!(["a", "b"]));
+    }
+
+    #[test]
+    fn auto_type_json_array_with_quotes() {
+        assert_eq!(
+            auto_type(r#"["proxmox_virtual_environment_vm.node[\"janus-2\"]"]"#),
+            json!(["proxmox_virtual_environment_vm.node[\"janus-2\"]"])
+        );
+    }
+
+    #[test]
+    fn auto_type_json_object() {
+        assert_eq!(auto_type(r#"{"key":"val"}"#), json!({"key": "val"}));
+    }
+
+    #[test]
+    fn auto_type_bracket_string_not_json() {
+        assert_eq!(auto_type("[not json"), json!("[not json"));
     }
 }
