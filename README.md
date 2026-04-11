@@ -178,6 +178,8 @@ Values are auto-typed:
 | `true` / `false` | boolean |
 | `42` | integer |
 | `3.14` | float |
+| `["a","b"]` | JSON array |
+| `{"k":"v"}` | JSON object |
 | anything else | string |
 
 Parameters from `--set` are merged with the deployment's defaults. Explicit values override defaults.
