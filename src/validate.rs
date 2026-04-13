@@ -748,4 +748,178 @@ mod tests {
         let params = json!("not an object");
         assert!(validate_params(&params, &schema).is_ok());
     }
+
+    // -- Multi-level $ref chain tests --
+
+    fn make_nested_schema() -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "config": { "$ref": "#/definitions/FlowConfig" }
+            },
+            "definitions": {
+                "FlowConfig": {
+                    "type": "object",
+                    "properties": {
+                        "db": { "$ref": "#/definitions/DatabaseConfig" },
+                        "dry_run": { "type": "boolean" }
+                    }
+                },
+                "DatabaseConfig": {
+                    "type": "object",
+                    "properties": {
+                        "host": { "type": "string" },
+                        "port": { "type": "integer" }
+                    }
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn validate_two_level_nesting_valid() {
+        let schema = make_nested_schema();
+        let params = json!({"config": {"db": {"host": "localhost"}}});
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_two_level_nesting_invalid() {
+        let schema = make_nested_schema();
+        let params = json!({"config": {"db": {"hsot": "localhost"}}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("config.db.hsot"),
+            "should show full path: {}",
+            msg
+        );
+        assert!(msg.contains("host"), "should suggest 'host': {}", msg);
+        assert!(
+            msg.contains("config.db.host"),
+            "should show full suggested path: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn validate_two_level_error_shows_correct_context() {
+        let schema = make_nested_schema();
+        let params = json!({"config": {"db": {"bogus": true}}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("parameters for config.db"),
+            "should show correct parent: {}",
+            msg
+        );
+    }
+
+    // -- $defs (Pydantic v2) full integration --
+
+    #[test]
+    fn validate_pydantic_v2_dollar_defs() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "config": {
+                    "allOf": [{ "$ref": "#/$defs/FlowConfig" }],
+                    "default": {}
+                }
+            },
+            "$defs": {
+                "FlowConfig": {
+                    "type": "object",
+                    "properties": {
+                        "dry_run": { "type": "boolean" },
+                        "action": { "type": "string" }
+                    }
+                }
+            }
+        });
+        let params = json!({"config": {"dry_run": true}});
+        assert!(validate_params(&params, &schema).is_ok());
+
+        let params_bad = json!({"config": {"bogus": true}});
+        let err = validate_params(&params_bad, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("config.bogus"),
+            "should catch invalid key: {}",
+            msg
+        );
+    }
+
+    // -- anyOf Optional model integration --
+
+    #[test]
+    fn validate_optional_model_anyof() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "config": {
+                    "anyOf": [
+                        { "$ref": "#/definitions/FlowConfig" },
+                        { "type": "null" }
+                    ]
+                }
+            },
+            "definitions": {
+                "FlowConfig": {
+                    "type": "object",
+                    "properties": {
+                        "dry_run": { "type": "boolean" }
+                    }
+                }
+            }
+        });
+        let params = json!({"config": {"dry_run": true}});
+        assert!(validate_params(&params, &schema).is_ok());
+
+        let params_bad = json!({"config": {"bogus": true}});
+        assert!(validate_params(&params_bad, &schema).is_err());
+    }
+
+    // -- additionalProperties integration --
+
+    #[test]
+    fn validate_additional_properties_skips_validation() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "type": "object",
+                    "additionalProperties": { "type": "string" }
+                }
+            },
+            "definitions": {}
+        });
+        let params = json!({"tags": {"anything": "goes", "foo": "bar"}});
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    // -- Inline JSON override tests --
+
+    #[test]
+    fn validate_inline_json_object_override() {
+        let schema = make_schema();
+        let params = json!({"config": {"dry_run": true}});
+        assert!(validate_params(&params, &schema).is_ok());
+
+        let params_bad = json!({"config": {"bogus": true}});
+        assert!(validate_params(&params_bad, &schema).is_err());
+    }
+
+    #[test]
+    fn validate_inline_json_nested_invalid() {
+        let schema = make_nested_schema();
+        let params = json!({"config": {"db": {"hsot": "x"}}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("config.db.hsot"),
+            "should catch nested inline JSON key: {}",
+            msg
+        );
+    }
 }
