@@ -1096,4 +1096,182 @@ mod tests {
         assert!(msg.contains("nmae"));
         assert!(msg.contains("name"));
     }
+
+    // -- Real Prefect deployment schema tests --
+    //
+    // These use actual parameter_openapi_schema values captured from
+    // production Prefect deployments. They catch structural assumptions
+    // that synthetic test schemas miss.
+
+    fn load_fixture(name: &str) -> Value {
+        let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Failed to read fixture {path}: {e}"));
+        serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("Failed to parse fixture {path}: {e}"))
+    }
+
+    // -- Ansible deploy schema (has anyOf Optional fields, additionalProperties: false) --
+
+    #[test]
+    fn real_ansible_schema_valid_params_pass() {
+        let schema = load_fixture("ansible_deploy_schema.json");
+        let params = json!({
+            "config": {
+                "deployment_name": "happy",
+                "dry_run": true,
+                "git_ref": "main",
+                "ansible_tags": "firewall"
+            },
+            "environment": "production"
+        });
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn real_ansible_schema_all_valid_keys_accepted() {
+        let schema = load_fixture("ansible_deploy_schema.json");
+        // Every single key that exists in the real schema
+        let params = json!({
+            "config": {
+                "deployment_name": "happy",
+                "dry_run": false,
+                "git_ref": "abc123",
+                "ansible_tags": "firewall,observability",
+                "ansible_debug": true,
+                "ansible_limit": "janus-1.REDACTEDium.co",
+                "playbook_name": "deploy_happy",
+                "vault_secrets": [{"path": "kv/test", "field": "PASS", "env_var": "MY_PASS"}],
+                "inventory_name": "happy"
+            },
+            "environment": "staging"
+        });
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn real_ansible_schema_typo_rejected_with_suggestion() {
+        let schema = load_fixture("ansible_deploy_schema.json");
+        let params = json!({"config": {"dry_urn": true}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("config.dry_urn"),
+            "should show full path: {}",
+            msg
+        );
+        assert!(msg.contains("dry_run"), "should suggest dry_run: {}", msg);
+    }
+
+    #[test]
+    fn real_ansible_schema_unknown_top_level_rejected() {
+        let schema = load_fixture("ansible_deploy_schema.json");
+        let params = json!({"conifg": {"deployment_name": "happy"}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("conifg"));
+        assert!(msg.contains("config"));
+    }
+
+    #[test]
+    fn real_ansible_schema_optional_null_field_passes() {
+        // git_ref uses anyOf with null — setting it should work
+        let schema = load_fixture("ansible_deploy_schema.json");
+        let params = json!({"config": {"git_ref": null}});
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn real_ansible_schema_only_overrides_no_false_positive() {
+        // Common case: user only overrides one param
+        let schema = load_fixture("ansible_deploy_schema.json");
+        let params = json!({"config": {"dry_run": true}});
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    // -- Terraform schema (has $ref to enum, array fields, integer fields) --
+
+    #[test]
+    fn real_terraform_schema_valid_params_pass() {
+        let schema = load_fixture("terraform_schema.json");
+        let params = json!({
+            "config": {
+                "name": "bifrost",
+                "action": "plan",
+                "module": "proxmox_vm",
+                "dry_run": false
+            },
+            "environment": "production"
+        });
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn real_terraform_schema_all_valid_keys_accepted() {
+        let schema = load_fixture("terraform_schema.json");
+        let params = json!({
+            "config": {
+                "name": "bifrost",
+                "action": "apply",
+                "module": "proxmox_vm",
+                "cluster": "pleiades",
+                "dry_run": false,
+                "parallelism": 5,
+                "proxmox_node": "janus-1",
+                "import_address": "tailscale_acl.policy",
+                "proxmox_api_url": "https://proxmox.example.com",
+                "terraform_target": ["proxmox_virtual_environment_vm.node"],
+                "terraform_replace": ["proxmox_virtual_environment_vm.node"]
+            }
+        });
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn real_terraform_schema_typo_rejected() {
+        let schema = load_fixture("terraform_schema.json");
+        let params = json!({"config": {"parrallelism": 5}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("parrallelism"));
+        assert!(
+            msg.contains("parallelism"),
+            "should suggest parallelism: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn real_terraform_schema_action_is_leaf_not_object() {
+        // action is a $ref to TerraformAction enum — a leaf type.
+        // Passing a string value should be fine (no recursion into enum).
+        let schema = load_fixture("terraform_schema.json");
+        let params = json!({"config": {"action": "apply"}});
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn real_terraform_schema_array_field_with_strings() {
+        // terraform_target is an array of strings — non-object leaf
+        let schema = load_fixture("terraform_schema.json");
+        let params = json!({"config": {"terraform_target": ["resource.name"]}});
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn real_terraform_schema_via_build_params() {
+        // Test the exact path a real user would take
+        use crate::params;
+        let schema = load_fixture("terraform_schema.json");
+        let overrides = params::build_params(&[
+            "config.name=bifrost".to_string(),
+            "config.action=apply".to_string(),
+            "config.dry_run=false".to_string(),
+            "config.parallelism=5".to_string(),
+            r#"config.terraform_target=["proxmox_virtual_environment_vm.node[\"janus-2\"]"]"#
+                .to_string(),
+        ])
+        .unwrap();
+        assert!(validate_params(&overrides, &schema).is_ok());
+    }
 }
