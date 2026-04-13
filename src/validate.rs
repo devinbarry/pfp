@@ -921,4 +921,179 @@ mod tests {
             msg
         );
     }
+
+    // -- Production safety: false-positive prevention tests --
+    //
+    // These tests guard against the most dangerous bug class: rejecting
+    // parameters that are valid, which would break existing workflows.
+
+    #[test]
+    fn validate_null_schema_passes() {
+        // Prefect API could return "parameter_openapi_schema": null
+        // which serde deserializes as Some(Value::Null), bypassing the
+        // if-let-Some guard in run.rs and calling validate_params with Null.
+        let params = json!({"config": {"action": "plan"}});
+        assert!(validate_params(&params, &Value::Null).is_ok());
+    }
+
+    #[test]
+    fn validate_bool_schema_passes() {
+        // JSON Schema allows `true` as a valid schema meaning "any value allowed"
+        let params = json!({"config": {"action": "plan"}});
+        assert!(validate_params(&params, &Value::Bool(true)).is_ok());
+    }
+
+    #[test]
+    fn validate_empty_object_schema_passes() {
+        // Schema is {} — no properties defined, everything should pass
+        let params = json!({"anything": "goes", "config": {"nested": true}});
+        assert!(validate_params(&params, &json!({})).is_ok());
+    }
+
+    #[test]
+    fn validate_leaf_values_of_all_types_pass() {
+        // Users pass strings, bools, numbers, arrays, null via --set.
+        // Non-object values at valid keys must not cause errors.
+        let schema = make_schema();
+        let params = json!({
+            "config": {
+                "action": "destroy",
+                "dry_run": true,
+                "ansible_debug": false,
+                "ansible_tags": "tag1,tag2",
+                "vault_secrets": null
+            },
+            "environment": "staging"
+        });
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_array_value_at_valid_key_passes() {
+        // --set ansible_tags='["tag1","tag2"]' produces an array value
+        let schema = make_schema();
+        let params = json!({"config": {"ansible_tags": ["tag1", "tag2"]}});
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_number_value_at_valid_key_passes() {
+        let schema = make_nested_schema();
+        let params = json!({"config": {"db": {"port": 5432}}});
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_all_make_schema_keys_accepted() {
+        // Exhaustively test every valid key in the make_schema() fixture
+        let schema = make_schema();
+        let params = json!({
+            "config": {
+                "dry_run": true,
+                "action": "plan",
+                "git_ref": "main",
+                "deployment_name": "prod",
+                "inventory_name": "hosts",
+                "playbook_name": "site.yml",
+                "ansible_debug": false,
+                "ansible_limit": "webservers",
+                "ansible_tags": "deploy",
+                "vault_secrets": true
+            },
+            "environment": "production"
+        });
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    // -- build_params -> validate_params pipeline tests --
+    //
+    // These test the exact format that build_params produces, ensuring
+    // the validator works with real --set flag output.
+
+    #[test]
+    fn validate_build_params_simple_dotted_path() {
+        use crate::params;
+        let schema = make_schema();
+        let overrides = params::build_params(&["config.action=destroy".to_string()]).unwrap();
+        assert!(validate_params(&overrides, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_build_params_multiple_sets() {
+        use crate::params;
+        let schema = make_schema();
+        let overrides = params::build_params(&[
+            "config.action=destroy".to_string(),
+            "config.dry_run=true".to_string(),
+            "environment=staging".to_string(),
+        ])
+        .unwrap();
+        assert!(validate_params(&overrides, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_build_params_json_object_value() {
+        use crate::params;
+        let schema = make_nested_schema();
+        // --set config.db='{"host":"localhost","port":5432}'
+        let overrides =
+            params::build_params(&[r#"config.db={"host":"localhost","port":5432}"#.to_string()])
+                .unwrap();
+        assert!(validate_params(&overrides, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_build_params_json_array_value() {
+        use crate::params;
+        let schema = make_schema();
+        // --set config.ansible_tags='["tag1","tag2"]'
+        let overrides =
+            params::build_params(&[r#"config.ansible_tags=["tag1","tag2"]"#.to_string()]).unwrap();
+        assert!(validate_params(&overrides, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_build_params_invalid_key_rejected() {
+        use crate::params;
+        let schema = make_schema();
+        let overrides = params::build_params(&["config.dry_urn=true".to_string()]).unwrap();
+        let err = validate_params(&overrides, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("dry_urn"));
+        assert!(msg.contains("dry_run"));
+    }
+
+    #[test]
+    fn validate_build_params_nested_json_invalid_key_rejected() {
+        use crate::params;
+        let schema = make_nested_schema();
+        // --set config.db='{"hsot":"localhost"}'
+        let overrides =
+            params::build_params(&[r#"config.db={"hsot":"localhost"}"#.to_string()]).unwrap();
+        let err = validate_params(&overrides, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("config.db.hsot"));
+    }
+
+    // -- Schema with only top-level scalars (no nested models) --
+
+    #[test]
+    fn validate_flat_schema_no_definitions() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "count": { "type": "integer" },
+                "enabled": { "type": "boolean" }
+            }
+        });
+        let params = json!({"name": "test", "count": 5, "enabled": true});
+        assert!(validate_params(&params, &schema).is_ok());
+
+        let params_bad = json!({"nmae": "test"});
+        let err = validate_params(&params_bad, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("nmae"));
+        assert!(msg.contains("name"));
+    }
 }
