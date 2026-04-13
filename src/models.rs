@@ -18,6 +18,8 @@ pub struct Deployment {
     pub tags: Vec<String>,
     #[serde(default)]
     pub parameters: serde_json::Value,
+    #[serde(default)]
+    pub parameter_openapi_schema: Option<serde_json::Value>,
 }
 
 impl Deployment {
@@ -226,5 +228,41 @@ mod tests {
         .unwrap();
         assert_eq!(entry.level, 20);
         assert_eq!(entry.level_name(), "INFO");
+    }
+
+    #[test]
+    fn deployment_deserializes_parameter_openapi_schema() {
+        let d: Deployment = serde_json::from_value(json!({
+            "id": "abc",
+            "name": "d",
+            "flow_name": "f",
+            "parameter_openapi_schema": {
+                "type": "object",
+                "properties": {
+                    "config": { "$ref": "#/definitions/FlowConfig" }
+                },
+                "definitions": {
+                    "FlowConfig": {
+                        "type": "object",
+                        "properties": {
+                            "dry_run": { "type": "boolean" }
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert!(d.parameter_openapi_schema.is_some());
+        let schema = d.parameter_openapi_schema.unwrap();
+        assert!(schema.get("properties").is_some());
+    }
+
+    #[test]
+    fn deployment_missing_schema_is_none() {
+        let d: Deployment = serde_json::from_value(json!({
+            "id": "abc", "name": "d", "flow_name": "f"
+        }))
+        .unwrap();
+        assert!(d.parameter_openapi_schema.is_none());
     }
 }

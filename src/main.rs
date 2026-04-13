@@ -7,6 +7,7 @@ mod models;
 mod output;
 mod params;
 mod resolve;
+mod validate;
 
 use clap::{Parser, Subcommand};
 use client::PrefectClient;
