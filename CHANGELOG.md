@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-04-13
+
+### Added
+
+- **Client-side parameter validation** — `--set` parameters are validated against the deployment's OpenAPI schema before creating flow runs. Typos are caught immediately with "did you mean?" suggestions via Levenshtein distance.
+- Supports Pydantic v1 (`definitions`) and v2 (`$defs`) schemas
+- Handles `allOf`, `anyOf`, `oneOf` composition (model inheritance, Optional fields, discriminated unions)
+- Handles `additionalProperties` (Dict fields skip validation)
+- Recursion guard for self-referential Pydantic models
+- Validation errors exit with code 2 (CLI/usage error)
+- 75 new tests including real production schema fixtures (166 total)
+
 ## [0.3.1] - 2026-04-11
 
 ### Fixed
