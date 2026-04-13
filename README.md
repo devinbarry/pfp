@@ -10,6 +10,7 @@ pfp talks directly to the Prefect REST API, bypassing the official CLI's limitat
 - **Correct exit codes** — 0 for success, 1 for flow failure, 2 for CLI errors
 - **`--watch` that works** — polls until completion with state change reporting
 - **Dotted path parameters** — `--set config.action=destroy` builds nested JSON
+- **Parameter validation** — typos caught before submission with "did you mean?" suggestions
 - **`--json` on everything** — structured output for programmatic consumption
 - **Full deployment names** — no truncation, ever
 
@@ -183,6 +184,24 @@ Values are auto-typed:
 | anything else | string |
 
 Parameters from `--set` are merged with the deployment's defaults. Explicit values override defaults.
+
+### Validation
+
+Before submitting a flow run, pfp validates `--set` parameters against the deployment's OpenAPI schema. Typos are caught immediately:
+
+```
+$ pfp run happy-t --set config.dry_urn=true
+Error: unknown parameter 'config.dry_urn'
+
+Valid parameters for config:
+  action, ansible_debug, ansible_limit, ansible_tags,
+  deployment_name, dry_run, git_ref, inventory_name,
+  playbook_name, vault_secrets
+
+Did you mean 'config.dry_run'?
+```
+
+Validation is automatic — no flags needed. If a deployment has no schema (older Prefect versions), validation is skipped and parameters are passed through as before.
 
 ## Exit codes
 
