@@ -178,7 +178,6 @@ fn format_context(path: &str) -> String {
 }
 
 /// Validate user parameters against a deployment's OpenAPI schema.
-#[allow(dead_code)]
 pub fn validate_params(params: &Value, schema: &Value) -> Result<()> {
     if !params.is_object() {
         return Ok(());

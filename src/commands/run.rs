@@ -4,6 +4,7 @@ use crate::models::FlowRun;
 use crate::output;
 use crate::params;
 use crate::resolve;
+use crate::validate;
 
 pub async fn run(
     client: PrefectClient,
@@ -21,6 +22,12 @@ pub async fn run(
     } else {
         params::build_params(&sets).map_err(PfpError::Config)?
     };
+
+    // Validate overrides against deployment's parameter schema
+    if let Some(schema) = &deployment.parameter_openapi_schema {
+        validate::validate_params(&overrides, schema)?;
+    }
+
     let parameters = params::merge_params(&deployment.parameters, &overrides);
 
     // Create flow run
