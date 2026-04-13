@@ -1,14 +1,10 @@
-#[allow(unused_imports)]
 use std::collections::HashMap;
 
-#[allow(unused_imports)]
 use serde_json::Value;
 
-#[allow(unused_imports)]
 use crate::error::{PfpError, Result};
 
 /// Compute Levenshtein edit distance between two strings.
-#[allow(dead_code)]
 fn levenshtein(a: &str, b: &str) -> usize {
     let a_len = a.len();
     let b_len = b.len();
@@ -31,7 +27,6 @@ fn levenshtein(a: &str, b: &str) -> usize {
 }
 
 /// Find the closest match by Levenshtein distance (max distance 3).
-#[allow(dead_code)]
 fn suggest(invalid: &str, valid_keys: &[String]) -> Option<String> {
     valid_keys
         .iter()
@@ -43,7 +38,6 @@ fn suggest(invalid: &str, valid_keys: &[String]) -> Option<String> {
 
 /// Extract the definitions map from a top-level schema, checking both
 /// "definitions" (Pydantic v1 / OpenAPI 3.0) and "$defs" (Pydantic v2 / JSON Schema 2020-12).
-#[allow(dead_code)]
 fn get_definitions(schema: &Value) -> &Value {
     schema
         .get("definitions")
@@ -53,7 +47,6 @@ fn get_definitions(schema: &Value) -> &Value {
 
 /// Strip the "#/definitions/" or "#/$defs/" prefix from a $ref string
 /// and look up the target in the definitions map.
-#[allow(dead_code)]
 fn resolve_ref<'a>(ref_str: &str, definitions: &'a Value) -> Option<&'a Value> {
     let name = ref_str
         .strip_prefix("#/definitions/")
@@ -66,7 +59,6 @@ fn resolve_ref<'a>(ref_str: &str, definitions: &'a Value) -> Option<&'a Value> {
 /// is a scalar type, or cannot be resolved (broken $ref, cycle).
 ///
 /// `visited` tracks resolved $ref targets to prevent infinite recursion.
-#[allow(dead_code)]
 fn resolve_properties(
     schema_node: &Value,
     definitions: &Value,
@@ -132,6 +124,137 @@ fn resolve_properties(
     } else {
         Some(props)
     }
+}
+
+/// Recursively walk user parameters against the schema, collecting errors.
+fn walk_params(
+    params: &Value,
+    schema_node: &Value,
+    definitions: &Value,
+    path: &str,
+    errors: &mut Vec<(String, Option<String>, Vec<String>)>,
+) {
+    let obj = match params.as_object() {
+        Some(o) => o,
+        None => return,
+    };
+
+    let props = resolve_properties(schema_node, definitions, &mut Default::default());
+
+    let valid_props = match props {
+        Some(p) => p,
+        None => return,
+    };
+
+    let mut valid_keys: Vec<String> = valid_props.keys().cloned().collect();
+    valid_keys.sort();
+
+    for (key, value) in obj {
+        let full_path = if path.is_empty() {
+            key.clone()
+        } else {
+            format!("{}.{}", path, key)
+        };
+
+        if let Some(child_schema) = valid_props.get(key) {
+            if value.is_object() {
+                walk_params(value, child_schema, definitions, &full_path, errors);
+            }
+        } else {
+            let suggestion = suggest(key, &valid_keys);
+            errors.push((full_path, suggestion, valid_keys.clone()));
+        }
+    }
+}
+
+/// Format the context label for a path.
+#[allow(dead_code)]
+fn format_context(path: &str) -> String {
+    if path.is_empty() {
+        "top-level parameters".to_string()
+    } else {
+        format!("parameters for {}", path)
+    }
+}
+
+/// Validate user parameters against a deployment's OpenAPI schema.
+#[allow(dead_code)]
+pub fn validate_params(params: &Value, schema: &Value) -> Result<()> {
+    if !params.is_object() {
+        return Ok(());
+    }
+
+    let definitions = get_definitions(schema);
+
+    let mut errors: Vec<(String, Option<String>, Vec<String>)> = Vec::new();
+    walk_params(params, schema, definitions, "", &mut errors);
+
+    if errors.is_empty() {
+        return Ok(());
+    }
+
+    let mut msg = String::new();
+
+    if errors.len() == 1 {
+        let (ref path, ref suggestion, _) = errors[0];
+        msg.push_str(&format!("unknown parameter '{}'", path));
+
+        let parent = path.rsplit_once('.').map(|(p, _)| p).unwrap_or("");
+        let context = format_context(parent);
+        msg.push_str(&format!(
+            "\n\nValid {}:\n  {}",
+            context,
+            errors[0].2.join(", ")
+        ));
+
+        if let Some(ref s) = suggestion {
+            let suggested_full = if let Some((parent, _)) = path.rsplit_once('.') {
+                format!("{}.{}", parent, s)
+            } else {
+                s.clone()
+            };
+            msg.push_str(&format!("\n\nDid you mean '{}'?", suggested_full));
+        }
+    } else {
+        msg.push_str("unknown parameters found\n");
+        for (ref path, ref suggestion, _) in &errors {
+            match suggestion {
+                Some(s) => {
+                    let suggested_full = if let Some((parent, _)) = path.rsplit_once('.') {
+                        format!("{}.{}", parent, s)
+                    } else {
+                        s.clone()
+                    };
+                    msg.push_str(&format!(
+                        "\n  '{}' — did you mean '{}'?",
+                        path, suggested_full
+                    ));
+                }
+                None => {
+                    msg.push_str(&format!("\n  '{}' — no close match", path));
+                }
+            }
+        }
+
+        let mut seen_parents: Vec<String> = Vec::new();
+        for (ref path, _, ref valid_keys) in &errors {
+            let parent = path
+                .rsplit_once('.')
+                .map(|(p, _)| p.to_string())
+                .unwrap_or_default();
+            if !seen_parents.contains(&parent) {
+                seen_parents.push(parent.clone());
+                let context = format_context(&parent);
+                msg.push_str(&format!(
+                    "\n\nValid {}:\n  {}",
+                    context,
+                    valid_keys.join(", ")
+                ));
+            }
+        }
+    }
+
+    Err(PfpError::Validation(msg))
 }
 
 #[cfg(test)]
@@ -461,5 +584,169 @@ mod tests {
         let defs = json!({});
         let result = resolve_properties(&node, &defs, &mut Default::default());
         assert!(result.is_none());
+    }
+
+    // -- validate_params tests --
+
+    fn make_schema() -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "config": { "$ref": "#/definitions/FlowConfig" },
+                "environment": { "type": "string", "default": "production" }
+            },
+            "definitions": {
+                "FlowConfig": {
+                    "type": "object",
+                    "properties": {
+                        "dry_run": { "type": "boolean", "default": false },
+                        "action": { "type": "string" },
+                        "git_ref": { "type": "string" },
+                        "deployment_name": { "type": "string" },
+                        "inventory_name": { "type": "string" },
+                        "playbook_name": { "type": "string" },
+                        "ansible_debug": { "type": "boolean" },
+                        "ansible_limit": { "type": "string" },
+                        "ansible_tags": { "type": "string" },
+                        "vault_secrets": { "type": "boolean" }
+                    }
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn validate_valid_params_pass() {
+        let schema = make_schema();
+        let params = json!({"config": {"dry_run": true, "action": "plan"}});
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_valid_top_level_param() {
+        let schema = make_schema();
+        let params = json!({"environment": "staging"});
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_empty_overrides_pass() {
+        let schema = make_schema();
+        let params = json!({});
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_unknown_top_level_rejected() {
+        let schema = make_schema();
+        let params = json!({"conifg": {"dry_run": true}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("conifg"),
+            "should mention invalid key: {}",
+            msg
+        );
+        assert!(msg.contains("config"), "should suggest 'config': {}", msg);
+    }
+
+    #[test]
+    fn validate_unknown_nested_rejected() {
+        let schema = make_schema();
+        let params = json!({"config": {"dry_urn": true}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("dry_urn"),
+            "should mention invalid key: {}",
+            msg
+        );
+        assert!(msg.contains("dry_run"), "should suggest 'dry_run': {}", msg);
+    }
+
+    #[test]
+    fn validate_multiple_errors_reported() {
+        let schema = make_schema();
+        let params = json!({"config": {"dry_urn": true, "foobar": "x"}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("dry_urn"), "should mention dry_urn: {}", msg);
+        assert!(msg.contains("foobar"), "should mention foobar: {}", msg);
+    }
+
+    #[test]
+    fn validate_no_suggestion_for_distant_key() {
+        let schema = make_schema();
+        let params = json!({"config": {"xyzzy_foo_bar": true}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("xyzzy_foo_bar"),
+            "should mention invalid key: {}",
+            msg
+        );
+        assert!(
+            !msg.contains("did you mean"),
+            "should not suggest for distant key: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn validate_error_shows_valid_keys_sorted() {
+        let schema = make_schema();
+        let params = json!({"config": {"bogus": true}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("action"), "should list valid keys: {}", msg);
+        assert!(msg.contains("dry_run"), "should list valid keys: {}", msg);
+        let action_pos = msg.find("action").unwrap();
+        let dry_run_pos = msg.find("dry_run").unwrap();
+        assert!(action_pos < dry_run_pos, "keys should be sorted: {}", msg);
+    }
+
+    #[test]
+    fn validate_shows_full_dotted_path_in_context() {
+        let schema = make_schema();
+        let params = json!({"config": {"bogus": true}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("config.bogus"),
+            "should show full dotted path: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn validate_errors_from_different_parents_grouped() {
+        let schema = make_schema();
+        let params = json!({"conifg": {}, "config": {"bogus": true}});
+        let err = validate_params(&params, &schema).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("conifg"),
+            "should mention top-level error: {}",
+            msg
+        );
+        assert!(
+            msg.contains("config.bogus"),
+            "should mention nested error: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn validate_none_schema_properties_passes() {
+        let schema = json!({"type": "object"});
+        let params = json!({"anything": "goes"});
+        assert!(validate_params(&params, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_non_object_params_pass() {
+        let schema = make_schema();
+        let params = json!("not an object");
+        assert!(validate_params(&params, &schema).is_ok());
     }
 }
