@@ -22,6 +22,10 @@ pub enum PfpError {
 
     #[error("Flow run failed: {0}")]
     FlowRunFailed(String),
+
+    #[error("{0}")]
+    #[allow(dead_code)]
+    Validation(String),
 }
 
 impl PfpError {
@@ -76,5 +80,17 @@ mod tests {
         let msg = format!("{}", err);
         assert!(msg.contains("abc"));
         assert!(msg.contains("abc-123"));
+    }
+
+    #[test]
+    fn exit_code_validation_error() {
+        let err = PfpError::Validation("unknown parameter 'config.bogus'".to_string());
+        assert_eq!(err.exit_code(), 2);
+    }
+
+    #[test]
+    fn validation_error_displays_message() {
+        let err = PfpError::Validation("unknown parameter 'config.bogus'".to_string());
+        assert_eq!(format!("{}", err), "unknown parameter 'config.bogus'");
     }
 }
