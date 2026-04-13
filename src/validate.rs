@@ -168,7 +168,6 @@ fn walk_params(
 }
 
 /// Format the context label for a path.
-#[allow(dead_code)]
 fn format_context(path: &str) -> String {
     if path.is_empty() {
         "top-level parameters".to_string()
@@ -270,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn levenshtein_distance_1() {
+    fn levenshtein_transposition_distance_2() {
         assert_eq!(levenshtein("dry_urn", "dry_run"), 2);
     }
 
