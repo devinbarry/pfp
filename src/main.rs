@@ -37,6 +37,10 @@ enum Commands {
         watch: bool,
         #[arg(long = "set", num_args = 1)]
         sets: Vec<String>,
+        /// Read flow-run parameters as JSON from a file, or "-" for stdin.
+        /// Merged under any --set overrides (--set wins).
+        #[arg(long = "params-file")]
+        params_file: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -102,11 +106,25 @@ fn describe_command(cmd: &Commands) -> (String, serde_json::Value) {
             query,
             watch,
             sets,
+            params_file,
             json,
-        } => (
-            "run".into(),
-            serde_json::json!({ "query": query, "watch": watch, "sets": sets, "json": json }),
-        ),
+        } => {
+            let params_payload = params_file.as_ref().map(|p| {
+                commands::run::load_params_file(p)
+                    .map(|v| serde_json::json!({ "path": p, "payload": v }))
+                    .unwrap_or_else(|_| serde_json::json!({ "path": p }))
+            });
+            (
+                "run".into(),
+                serde_json::json!({
+                    "query": query,
+                    "watch": watch,
+                    "sets": sets,
+                    "params_file": params_payload,
+                    "json": json,
+                }),
+            )
+        }
         Commands::Runs { query, json } => (
             "runs".into(),
             serde_json::json!({ "query": query, "json": json }),
@@ -140,11 +158,12 @@ async fn run(cli: Cli) -> Result<()> {
             query,
             watch,
             sets,
+            params_file,
             json,
         } => {
             let config = Config::load()?;
             let client = PrefectClient::new(config);
-            commands::run::run(client, query, watch, sets, None, json).await
+            commands::run::run(client, query, watch, sets, params_file, json).await
         }
         Commands::Runs { query, json } => {
             let config = Config::load()?;
