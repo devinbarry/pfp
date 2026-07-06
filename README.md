@@ -203,6 +203,25 @@ Did you mean 'config.dry_run'?
 
 Validation is automatic — no flags needed. If a deployment has no schema (older Prefect versions), validation is skipped and parameters are passed through as before.
 
+### Params file
+
+For large or deeply-nested parameters — an array of objects, say — that are awkward to express with repeated `--set` flags, pass the whole parameters object as JSON with `--params-file`:
+
+```bash
+pfp run happy-t --params-file payload.json     # read from a file
+cat payload.json | pfp run happy-t --params-file -   # read from stdin (a single -)
+```
+
+The payload must be a JSON object matching the deployment's parameters shape:
+
+```json
+{"config": {"action": "apply", "vault_secrets": ["kv/data/aws", "kv/data/gcp"]}}
+```
+
+Precedence is deployment defaults < `--params-file` < `--set`, so a single `--set config.action=plan` can still override one field of a large payload.
+
+The payload is validated against the deployment schema — the same client-side validation as `--set` — before the run is created. An unreadable file, malformed JSON, or a non-object top-level fails fast with exit code 2 before any API call.
+
 ## Exit codes
 
 | Code | Meaning |
