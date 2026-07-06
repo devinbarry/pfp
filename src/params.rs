@@ -18,6 +18,28 @@ pub fn build_params(sets: &[String]) -> Result<Value, String> {
     Ok(Value::Object(root))
 }
 
+/// Parse a JSON string into a parameters object.
+/// Requires the top-level value to be a JSON object.
+#[allow(dead_code)] // wired up by --params-file in a later change
+pub fn parse_params(content: &str) -> Result<Value, String> {
+    let value: Value = serde_json::from_str(content)
+        .map_err(|e| format!("Invalid JSON in params payload: {}", e))?;
+    if !value.is_object() {
+        return Err(format!(
+            "Params payload must be a JSON object, got {}",
+            match value {
+                Value::Array(_) => "an array",
+                Value::String(_) => "a string",
+                Value::Number(_) => "a number",
+                Value::Bool(_) => "a boolean",
+                Value::Null => "null",
+                Value::Object(_) => unreachable!(),
+            }
+        ));
+    }
+    Ok(value)
+}
+
 /// Merge `overrides` into `base` (deep merge at each level).
 pub fn merge_params(base: &Value, overrides: &Value) -> Value {
     match (base, overrides) {
@@ -194,5 +216,36 @@ mod tests {
     #[test]
     fn auto_type_bracket_string_not_json() {
         assert_eq!(auto_type("[not json"), json!("[not json"));
+    }
+
+    #[test]
+    fn parse_params_valid_object() {
+        let json = r#"{"environment": "production", "config": {"dry_run": false}}"#;
+        let result = parse_params(json).unwrap();
+        assert_eq!(
+            result,
+            json!({"environment": "production", "config": {"dry_run": false}})
+        );
+    }
+
+    #[test]
+    fn parse_params_malformed_json_errors() {
+        let result = parse_params("{not valid json");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("JSON"));
+    }
+
+    #[test]
+    fn parse_params_non_object_top_level_errors() {
+        // A JSON array is valid JSON but not a parameters object
+        let result = parse_params(r#"["a", "b"]"#);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("object"));
+    }
+
+    #[test]
+    fn parse_params_scalar_top_level_errors() {
+        let result = parse_params("42");
+        assert!(result.is_err());
     }
 }
