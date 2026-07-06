@@ -175,10 +175,10 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
             json,
             ..
         } => {
+            // Surface a bad --params-file before any config/network work.
+            let params_base = params_payload.transpose()?;
             let config = Config::load()?;
             let client = PrefectClient::new(config);
-            // Payload was read once in main(); propagate any parse error here.
-            let params_base = params_payload.transpose()?;
             commands::run::run(client, query, watch, sets, params_base, json).await
         }
         Commands::Runs { query, json } => {
