@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-07-06
+
+### Added
+
+- **JSON payload input for `pfp run`** — new `--params-file <PATH>` flag supplies the full flow-run parameters object as JSON. Ideal for large or deeply-nested parameters (e.g. a `vault_secrets` array of objects) that are awkward to express with repeated `--set` flags.
+- `--params-file -` reads the payload from stdin.
+- Merge precedence: deployment defaults < `--params-file` < `--set`, so individual fields can still be overridden with `--set` on top of a payload.
+- The payload is validated against the deployment's OpenAPI schema (same validation as `--set`). An unreadable file, malformed JSON, or a non-object top-level fails fast with exit code 2 before any API call.
+- The full payload is recorded in the JSONL invocation log.
+- 9 new tests covering merge precedence, stdin handling, and array-of-objects payloads (179 total)
+
 ## [0.4.0] - 2026-04-13
 
 ### Added
