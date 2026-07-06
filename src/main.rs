@@ -144,7 +144,7 @@ async fn run(cli: Cli) -> Result<()> {
         } => {
             let config = Config::load()?;
             let client = PrefectClient::new(config);
-            commands::run::run(client, query, watch, sets, json).await
+            commands::run::run(client, query, watch, sets, None, json).await
         }
         Commands::Runs { query, json } => {
             let config = Config::load()?;
