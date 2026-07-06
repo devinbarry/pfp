@@ -402,6 +402,10 @@ mod tests {
             .await;
         let run_mock = server
             .mock("POST", "/deployments/dep-1/create_flow_run")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"parameters":{"environment":"production","config":{"action":"destroy"}}}"#
+                    .to_string(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(r#"{"id":"run-1","name":"cool-run","state_type":"SCHEDULED","state_name":"Scheduled"}"#)
@@ -471,8 +475,11 @@ mod tests {
         .await;
 
         assert!(result.is_err());
-        let msg = format!("{}", result.unwrap_err());
+        let err = result.unwrap_err();
+        let msg = format!("{}", err);
         assert!(msg.contains("dry_urn"), "should mention typo: {}", msg);
+        assert_eq!(err.exit_code(), 2);
+        assert!(matches!(err, crate::error::PfpError::Validation(_)));
         deploy_mock.assert_async().await;
         flow_mock.assert_async().await;
         run_mock.assert_async().await;
@@ -480,7 +487,8 @@ mod tests {
 
     #[tokio::test]
     async fn run_set_overrides_params_file() {
-        // --set config.action=plan must win over the payload's config.action=destroy.
+        // --set config.action=apply must win over the payload's config.action=destroy
+        // (and over the deployment default of plan).
         let mut server = mockito::Server::new_async().await;
         let deploy_mock = server
             .mock("POST", "/deployments/filter")
@@ -499,7 +507,7 @@ mod tests {
         let run_mock = server
             .mock("POST", "/deployments/dep-1/create_flow_run")
             .match_body(mockito::Matcher::PartialJsonString(
-                r#"{"parameters":{"config":{"action":"plan"}}}"#.to_string(),
+                r#"{"parameters":{"config":{"action":"apply"}}}"#.to_string(),
             ))
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -516,7 +524,7 @@ mod tests {
             client,
             "test-deploy".to_string(),
             false,
-            vec!["config.action=plan".to_string()],
+            vec!["config.action=apply".to_string()],
             Some(f.path().to_str().unwrap().to_string()),
             false,
         )
