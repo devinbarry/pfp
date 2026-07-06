@@ -20,7 +20,6 @@ pub fn build_params(sets: &[String]) -> Result<Value, String> {
 
 /// Parse a JSON string into a parameters object.
 /// Requires the top-level value to be a JSON object.
-#[allow(dead_code)] // wired up by --params-file in a later change
 pub fn parse_params(content: &str) -> Result<Value, String> {
     let value: Value = serde_json::from_str(content)
         .map_err(|e| format!("Invalid JSON in params payload: {}", e))?;

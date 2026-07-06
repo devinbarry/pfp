@@ -6,6 +6,25 @@ use crate::params;
 use crate::resolve;
 use crate::validate;
 
+/// Load parameters from a file path, or from stdin if `path` is "-".
+/// Returns a validated JSON object, or PfpError::Config on any failure.
+#[allow(dead_code)] // wired into run() in a later change
+pub fn load_params_file(path: &str) -> Result<serde_json::Value> {
+    let content = if path == "-" {
+        use std::io::Read;
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| PfpError::Config(format!("Failed to read params from stdin: {}", e)))?;
+        buf
+    } else {
+        std::fs::read_to_string(path).map_err(|e| {
+            PfpError::Config(format!("Failed to read params file '{}': {}", path, e))
+        })?
+    };
+    params::parse_params(&content).map_err(PfpError::Config)
+}
+
 pub async fn run(
     client: PrefectClient,
     query: String,
@@ -139,6 +158,38 @@ mod tests {
             "flow_name": "test_flow",
             "parameters": {"config": {"action": "plan"}}
         }])
+    }
+
+    #[test]
+    fn load_params_file_reads_valid_json() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(f, r#"{{"config": {{"dry_run": true}}}}"#).unwrap();
+        let result = super::load_params_file(f.path().to_str().unwrap()).unwrap();
+        assert_eq!(result, json!({"config": {"dry_run": true}}));
+    }
+
+    #[test]
+    fn load_params_file_missing_file_errors() {
+        let result = super::load_params_file("/nonexistent/path/payload.json");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            crate::error::PfpError::Config(_)
+        ));
+    }
+
+    #[test]
+    fn load_params_file_malformed_json_errors() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(f, "{{not json").unwrap();
+        let result = super::load_params_file(f.path().to_str().unwrap());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            crate::error::PfpError::Config(_)
+        ));
     }
 
     #[tokio::test]
