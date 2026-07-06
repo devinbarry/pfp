@@ -215,7 +215,16 @@ cat payload.json | pfp run happy-t --params-file -   # read from stdin (a single
 The payload must be a JSON object matching the deployment's parameters shape:
 
 ```json
-{"config": {"action": "apply", "vault_secrets": ["kv/data/aws", "kv/data/gcp"]}}
+{
+  "environment": "production",
+  "config": {
+    "action": "apply",
+    "vault_secrets": [
+      {"path": "kv/prod/app/db", "field": "PASSWORD", "env_var": "DB_PASSWORD"},
+      {"path": "kv/prod/app/r2", "field": "ACCESS_KEY", "env_var": "AWS_ACCESS_KEY_ID"}
+    ]
+  }
+}
 ```
 
 Precedence is deployment defaults < `--params-file` < `--set`, so a single `--set config.action=plan` can still override one field of a large payload.
