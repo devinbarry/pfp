@@ -8,7 +8,6 @@ use crate::validate;
 
 /// Load parameters from a file path, or from stdin if `path` is "-".
 /// Returns a validated JSON object, or PfpError::Config on any failure.
-#[allow(dead_code)] // wired into run() in a later change
 pub fn load_params_file(path: &str) -> Result<serde_json::Value> {
     let content = if path == "-" {
         use std::io::Read;
@@ -30,17 +29,21 @@ pub async fn run(
     query: String,
     watch: bool,
     sets: Vec<String>,
+    params_file: Option<String>,
     json: bool,
 ) -> Result<()> {
     let deployment = resolve::resolve_deployment(&client, &query).await?;
     eprintln!("Resolved: {}", deployment.full_name());
 
-    // Build parameters: merge deployment defaults with --set overrides
-    let overrides = if sets.is_empty() {
-        serde_json::Value::Object(serde_json::Map::new())
-    } else {
-        params::build_params(&sets).map_err(PfpError::Config)?
+    // Build parameters: payload (--params-file) is the base, --set merges on top.
+    let mut overrides = match &params_file {
+        Some(path) => load_params_file(path)?,
+        None => serde_json::Value::Object(serde_json::Map::new()),
     };
+    if !sets.is_empty() {
+        let set_overrides = params::build_params(&sets).map_err(PfpError::Config)?;
+        overrides = params::merge_params(&overrides, &set_overrides);
+    }
 
     // Validate overrides against deployment's parameter schema
     if let Some(schema) = &deployment.parameter_openapi_schema {
@@ -226,6 +229,7 @@ mod tests {
                 "config.action=destroy".to_string(),
                 "config.dry_run=true".to_string(),
             ],
+            None,
             false,
         )
         .await;
@@ -266,6 +270,7 @@ mod tests {
             "test-deploy".to_string(),
             false,
             vec!["config.dry_urn=true".to_string()],
+            None,
             false,
         )
         .await;
@@ -323,6 +328,7 @@ mod tests {
             "test-deploy".to_string(),
             false,
             vec!["config.bogus=true".to_string()],
+            None,
             false,
         )
         .await;
@@ -360,9 +366,163 @@ mod tests {
 
         let client = test_client(&server);
         // No --set flags — should always succeed
-        let result = super::run(client, "test-deploy".to_string(), false, vec![], false).await;
+        let result = super::run(
+            client,
+            "test-deploy".to_string(),
+            false,
+            vec![],
+            None,
+            false,
+        )
+        .await;
 
         assert!(result.is_ok());
+        deploy_mock.assert_async().await;
+        flow_mock.assert_async().await;
+        run_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn run_with_params_file_succeeds() {
+        use std::io::Write;
+        let mut server = mockito::Server::new_async().await;
+        let deploy_mock = server
+            .mock("POST", "/deployments/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_deployment_with_schema().to_string())
+            .create_async()
+            .await;
+        let flow_mock = server
+            .mock("POST", "/flows/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"id":"flow-1","name":"test_flow"}]"#)
+            .create_async()
+            .await;
+        let run_mock = server
+            .mock("POST", "/deployments/dep-1/create_flow_run")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"id":"run-1","name":"cool-run","state_type":"SCHEDULED","state_name":"Scheduled"}"#)
+            .create_async()
+            .await;
+
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"{{"environment": "production", "config": {{"action": "destroy"}}}}"#
+        )
+        .unwrap();
+
+        let client = test_client(&server);
+        let result = super::run(
+            client,
+            "test-deploy".to_string(),
+            false,
+            vec![],
+            Some(f.path().to_str().unwrap().to_string()),
+            false,
+        )
+        .await;
+
+        assert!(result.is_ok(), "{:?}", result);
+        deploy_mock.assert_async().await;
+        flow_mock.assert_async().await;
+        run_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn run_params_file_invalid_key_rejected_before_api() {
+        let mut server = mockito::Server::new_async().await;
+        let deploy_mock = server
+            .mock("POST", "/deployments/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_deployment_with_schema().to_string())
+            .create_async()
+            .await;
+        let flow_mock = server
+            .mock("POST", "/flows/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"id":"flow-1","name":"test_flow"}]"#)
+            .create_async()
+            .await;
+        let run_mock = server
+            .mock("POST", "/deployments/dep-1/create_flow_run")
+            .expect(0)
+            .create_async()
+            .await;
+
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(f, r#"{{"config": {{"dry_urn": true}}}}"#).unwrap();
+
+        let client = test_client(&server);
+        let result = super::run(
+            client,
+            "test-deploy".to_string(),
+            false,
+            vec![],
+            Some(f.path().to_str().unwrap().to_string()),
+            false,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("dry_urn"), "should mention typo: {}", msg);
+        deploy_mock.assert_async().await;
+        flow_mock.assert_async().await;
+        run_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn run_set_overrides_params_file() {
+        // --set config.action=plan must win over the payload's config.action=destroy.
+        let mut server = mockito::Server::new_async().await;
+        let deploy_mock = server
+            .mock("POST", "/deployments/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_deployment_with_schema().to_string())
+            .create_async()
+            .await;
+        let flow_mock = server
+            .mock("POST", "/flows/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"id":"flow-1","name":"test_flow"}]"#)
+            .create_async()
+            .await;
+        let run_mock = server
+            .mock("POST", "/deployments/dep-1/create_flow_run")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"parameters":{"config":{"action":"plan"}}}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"id":"run-1","name":"cool-run","state_type":"SCHEDULED","state_name":"Scheduled"}"#)
+            .create_async()
+            .await;
+
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        write!(f, r#"{{"config": {{"action": "destroy"}}}}"#).unwrap();
+
+        let client = test_client(&server);
+        let result = super::run(
+            client,
+            "test-deploy".to_string(),
+            false,
+            vec!["config.action=plan".to_string()],
+            Some(f.path().to_str().unwrap().to_string()),
+            false,
+        )
+        .await;
+
+        assert!(result.is_ok(), "{:?}", result);
         deploy_mock.assert_async().await;
         flow_mock.assert_async().await;
         run_mock.assert_async().await;
