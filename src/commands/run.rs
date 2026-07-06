@@ -517,4 +517,60 @@ mod tests {
         flow_mock.assert_async().await;
         run_mock.assert_async().await;
     }
+
+    #[tokio::test]
+    async fn run_params_file_array_of_objects_reaches_body() {
+        // The motivating use case: a payload whose value is an array of objects
+        // (e.g. vault_secrets) — awkward to express with --set — must survive
+        // intact into the create_flow_run request body. Uses the no-schema
+        // deployment so validation doesn't reject the extra key.
+        let mut server = mockito::Server::new_async().await;
+        let deploy_mock = server
+            .mock("POST", "/deployments/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_deployment_without_schema().to_string())
+            .create_async()
+            .await;
+        let flow_mock = server
+            .mock("POST", "/flows/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"id":"flow-1","name":"test_flow"}]"#)
+            .create_async()
+            .await;
+        let run_mock = server
+            .mock("POST", "/deployments/dep-1/create_flow_run")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"parameters":{"config":{"vault_secrets":[{"path":"kv/a","field":"F","env_var":"E"},{"path":"kv/b","field":"G","env_var":"H"}]}}}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"id":"run-1","name":"cool-run","state_type":"SCHEDULED","state_name":"Scheduled"}"#)
+            .create_async()
+            .await;
+
+        let client = test_client(&server);
+        let result = super::run(
+            client,
+            "test-deploy".to_string(),
+            false,
+            vec![],
+            Some(json!({
+                "config": {
+                    "vault_secrets": [
+                        {"path": "kv/a", "field": "F", "env_var": "E"},
+                        {"path": "kv/b", "field": "G", "env_var": "H"}
+                    ]
+                }
+            })),
+            false,
+        )
+        .await;
+
+        assert!(result.is_ok(), "{:?}", result);
+        deploy_mock.assert_async().await;
+        flow_mock.assert_async().await;
+        run_mock.assert_async().await;
+    }
 }
