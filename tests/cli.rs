@@ -35,3 +35,35 @@ fn help_lists_subcommands() {
         .stdout(predicate::str::contains("resume"))
         .stdout(predicate::str::contains("cancel"));
 }
+
+/// Malformed JSON piped via `--params-file -` is rejected with exit code 2,
+/// before any config or network work. Guards that the stdin branch is wired
+/// and read, and that the payload error surfaces ahead of config loading.
+#[test]
+fn run_params_file_stdin_malformed_json_rejected() {
+    cargo_bin_cmd!("pfp")
+        .args(["run", "some-deploy", "--params-file", "-"])
+        .write_stdin("not json")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Invalid JSON in params payload"));
+}
+
+/// Valid JSON piped via `--params-file -` is read exactly once: it parses
+/// successfully and execution proceeds past parsing to the (unreachable) API,
+/// rather than failing with an empty-stdin JSON/EOF error. Regression guard
+/// for the stdin double-read bug. PREFECT_API_URL points at a closed port so
+/// the run fails fast on connection refused instead of hitting a real server.
+#[test]
+fn run_params_file_stdin_valid_json_read_once() {
+    cargo_bin_cmd!("pfp")
+        .args(["run", "some-deploy", "--params-file", "-"])
+        .env("PREFECT_API_URL", "http://127.0.0.1:1")
+        .env_remove("PREFECT_API_AUTH_STRING")
+        .write_stdin(r#"{"config": {"action": "plan"}}"#)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Invalid JSON").not())
+        .stderr(predicate::str::contains("EOF").not());
+}
