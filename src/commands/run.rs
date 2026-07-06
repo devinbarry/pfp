@@ -29,17 +29,15 @@ pub async fn run(
     query: String,
     watch: bool,
     sets: Vec<String>,
-    params_file: Option<String>,
+    params_base: Option<serde_json::Value>,
     json: bool,
 ) -> Result<()> {
     let deployment = resolve::resolve_deployment(&client, &query).await?;
     eprintln!("Resolved: {}", deployment.full_name());
 
     // Build parameters: payload (--params-file) is the base, --set merges on top.
-    let mut overrides = match &params_file {
-        Some(path) => load_params_file(path)?,
-        None => serde_json::Value::Object(serde_json::Map::new()),
-    };
+    let mut overrides =
+        params_base.unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
     if !sets.is_empty() {
         let set_overrides = params::build_params(&sets).map_err(PfpError::Config)?;
         overrides = params::merge_params(&overrides, &set_overrides);
@@ -384,7 +382,6 @@ mod tests {
 
     #[tokio::test]
     async fn run_with_params_file_succeeds() {
-        use std::io::Write;
         let mut server = mockito::Server::new_async().await;
         let deploy_mock = server
             .mock("POST", "/deployments/filter")
@@ -412,20 +409,13 @@ mod tests {
             .create_async()
             .await;
 
-        let mut f = tempfile::NamedTempFile::new().unwrap();
-        write!(
-            f,
-            r#"{{"environment": "production", "config": {{"action": "destroy"}}}}"#
-        )
-        .unwrap();
-
         let client = test_client(&server);
         let result = super::run(
             client,
             "test-deploy".to_string(),
             false,
             vec![],
-            Some(f.path().to_str().unwrap().to_string()),
+            Some(json!({"environment": "production", "config": {"action": "destroy"}})),
             false,
         )
         .await;
@@ -459,17 +449,13 @@ mod tests {
             .create_async()
             .await;
 
-        use std::io::Write;
-        let mut f = tempfile::NamedTempFile::new().unwrap();
-        write!(f, r#"{{"config": {{"dry_urn": true}}}}"#).unwrap();
-
         let client = test_client(&server);
         let result = super::run(
             client,
             "test-deploy".to_string(),
             false,
             vec![],
-            Some(f.path().to_str().unwrap().to_string()),
+            Some(json!({"config": {"dry_urn": true}})),
             false,
         )
         .await;
@@ -515,17 +501,13 @@ mod tests {
             .create_async()
             .await;
 
-        use std::io::Write;
-        let mut f = tempfile::NamedTempFile::new().unwrap();
-        write!(f, r#"{{"config": {{"action": "destroy"}}}}"#).unwrap();
-
         let client = test_client(&server);
         let result = super::run(
             client,
             "test-deploy".to_string(),
             false,
             vec!["config.action=apply".to_string()],
-            Some(f.path().to_str().unwrap().to_string()),
+            Some(json!({"config": {"action": "destroy"}})),
             false,
         )
         .await;

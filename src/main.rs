@@ -84,9 +84,20 @@ enum Commands {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    let (cmd_name, cmd_args) = describe_command(&cli.command);
+
+    // Resolve the --params-file payload exactly once so the stdin ("-") stream
+    // is not consumed twice (once for logging, once for execution).
+    let params_payload: Option<Result<serde_json::Value>> = match &cli.command {
+        Commands::Run {
+            params_file: Some(path),
+            ..
+        } => Some(commands::run::load_params_file(path)),
+        _ => None,
+    };
+
+    let (cmd_name, cmd_args) = describe_command(&cli.command, params_payload.as_ref());
     let start = Instant::now();
-    let result = run(cli).await;
+    let result = run(cli, params_payload).await;
     let duration_ms = start.elapsed().as_millis() as u64;
 
     logger::log_invocation(&cmd_name, cmd_args, &result, duration_ms);
@@ -98,8 +109,12 @@ async fn main() {
 }
 
 /// Extract subcommand name and args for logging.
-/// Note: --set values are logged in plaintext (same exposure as shell history).
-fn describe_command(cmd: &Commands) -> (String, serde_json::Value) {
+/// Note: --set values and --params-file payloads are logged in plaintext
+/// (same exposure as shell history).
+fn describe_command(
+    cmd: &Commands,
+    params_payload: Option<&Result<serde_json::Value>>,
+) -> (String, serde_json::Value) {
     match cmd {
         Commands::Ls { json } => ("ls".into(), serde_json::json!({ "json": json })),
         Commands::Run {
@@ -109,10 +124,9 @@ fn describe_command(cmd: &Commands) -> (String, serde_json::Value) {
             params_file,
             json,
         } => {
-            let params_payload = params_file.as_ref().map(|p| {
-                commands::run::load_params_file(p)
-                    .map(|v| serde_json::json!({ "path": p, "payload": v }))
-                    .unwrap_or_else(|_| serde_json::json!({ "path": p }))
+            let params_log = params_file.as_ref().map(|p| match params_payload {
+                Some(Ok(v)) => serde_json::json!({ "path": p, "payload": v }),
+                _ => serde_json::json!({ "path": p }),
             });
             (
                 "run".into(),
@@ -120,7 +134,7 @@ fn describe_command(cmd: &Commands) -> (String, serde_json::Value) {
                     "query": query,
                     "watch": watch,
                     "sets": sets,
-                    "params_file": params_payload,
+                    "params_file": params_log,
                     "json": json,
                 }),
             )
@@ -147,7 +161,7 @@ fn describe_command(cmd: &Commands) -> (String, serde_json::Value) {
     }
 }
 
-async fn run(cli: Cli) -> Result<()> {
+async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Result<()> {
     match cli.command {
         Commands::Ls { json } => {
             let config = Config::load()?;
@@ -158,12 +172,14 @@ async fn run(cli: Cli) -> Result<()> {
             query,
             watch,
             sets,
-            params_file,
             json,
+            ..
         } => {
             let config = Config::load()?;
             let client = PrefectClient::new(config);
-            commands::run::run(client, query, watch, sets, params_file, json).await
+            // Payload was read once in main(); propagate any parse error here.
+            let params_base = params_payload.transpose()?;
+            commands::run::run(client, query, watch, sets, params_base, json).await
         }
         Commands::Runs { query, json } => {
             let config = Config::load()?;
