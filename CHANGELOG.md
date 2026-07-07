@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2026-07-08
+
+### Added
+
+- `pfp logs` now accepts `--tail` as an alias for `--follow`/`-f`, matching the more familiar `tail -f` terminology.
+
+### Fixed
+
+- `pfp runs` no longer shows a stuck `0s` duration for actively running flow runs. Prefect only persists `total_run_time` once a run leaves the `RUNNING` state; the duration column now uses `estimated_run_time`, which the server computes live, so elapsed time updates on each check.
+
 ## [0.5.0] - 2026-07-06
 
 ### Added
