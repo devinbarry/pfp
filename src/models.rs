@@ -53,6 +53,8 @@ pub struct FlowRun {
     #[serde(default)]
     pub total_run_time: f64,
     #[serde(default)]
+    pub estimated_run_time: f64,
+    #[serde(default)]
     pub parameters: serde_json::Value,
 }
 
@@ -69,7 +71,7 @@ impl FlowRun {
     }
 
     pub fn duration_str(&self) -> String {
-        let secs = self.total_run_time as u64;
+        let secs = self.estimated_run_time as u64;
         if secs < 60 {
             format!("{}s", secs)
         } else {
@@ -178,7 +180,7 @@ mod tests {
     #[test]
     fn flow_run_duration_seconds_only() {
         let fr: FlowRun = serde_json::from_value(json!({
-            "id": "a", "name": "r", "total_run_time": 45.0
+            "id": "a", "name": "r", "total_run_time": 45.0, "estimated_run_time": 45.0
         }))
         .unwrap();
         assert_eq!(fr.duration_str(), "45s");
@@ -187,10 +189,20 @@ mod tests {
     #[test]
     fn flow_run_duration_with_minutes() {
         let fr: FlowRun = serde_json::from_value(json!({
-            "id": "a", "name": "r", "total_run_time": 125.0
+            "id": "a", "name": "r", "total_run_time": 125.0, "estimated_run_time": 125.0
         }))
         .unwrap();
         assert_eq!(fr.duration_str(), "2m 05s");
+    }
+
+    #[test]
+    fn flow_run_duration_uses_estimated_run_time_while_running() {
+        let fr: FlowRun = serde_json::from_value(json!({
+            "id": "a", "name": "r", "state_type": "RUNNING",
+            "total_run_time": 0.0, "estimated_run_time": 42.0
+        }))
+        .unwrap();
+        assert_eq!(fr.duration_str(), "42s");
     }
 
     #[test]
