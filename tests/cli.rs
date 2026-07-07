@@ -50,6 +50,30 @@ fn run_params_file_stdin_malformed_json_rejected() {
         .stderr(predicate::str::contains("Invalid JSON in params payload"));
 }
 
+/// --tail is accepted as an alias for --follow on `pfp logs`, since "tail"
+/// is the more familiar term for this behavior (tail -f).
+#[test]
+fn logs_tail_is_alias_for_follow() {
+    cargo_bin_cmd!("pfp")
+        .args(["logs", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--tail"));
+}
+
+/// --tail is parsed as a real flag (not just documented): it reaches
+/// resolve-flow-run logic rather than erroring as an unrecognized argument.
+#[test]
+fn logs_tail_flag_is_accepted_by_parser() {
+    cargo_bin_cmd!("pfp")
+        .args(["logs", "some-run", "--tail"])
+        .env("PREFECT_API_URL", "http://127.0.0.1:1")
+        .env_remove("PREFECT_API_AUTH_STRING")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unexpected argument").not());
+}
+
 /// Valid JSON piped via `--params-file -` is read exactly once: it parses
 /// successfully and execution proceeds past parsing to the (unreachable) API,
 /// rather than failing with an empty-stdin JSON/EOF error. Regression guard

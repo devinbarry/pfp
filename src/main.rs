@@ -59,7 +59,7 @@ enum Commands {
         #[arg(long)]
         limit: Option<usize>,
         /// Follow log output (like tail -f)
-        #[arg(long, short = 'f')]
+        #[arg(long, short = 'f', visible_alias = "tail")]
         follow: bool,
         #[arg(long)]
         json: bool,
