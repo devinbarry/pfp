@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.3] - 2026-07-19
+
+### Added
+
+- `pfp schedule-resume <query>` resolves one deployment and activates every attached schedule without changing the deployment-wide paused state. It fails when no schedules exist, verifies the complete final schedule set, and attempts to restore all initially inactive schedules if activation fails part way through.
+
 ## [0.5.2] - 2026-07-19
 
 ### Added
