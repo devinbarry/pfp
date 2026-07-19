@@ -6,3 +6,4 @@ pub mod pause;
 pub mod resume;
 pub mod run;
 pub mod runs;
+pub mod schedule_resume;

@@ -151,6 +151,17 @@ pfp pause happy-t     # pause the deployment
 pfp resume happy-t    # resume it
 ```
 
+`pause` and `resume` change the deployment-wide paused state. To activate every
+schedule attached to one deployment without changing that state, use:
+
+```bash
+pfp schedule-resume happy-t
+```
+
+The command fails if the deployment has no schedules. If activation fails part
+way through, pfp attempts to restore every schedule that was initially inactive
+and reports whether that rollback was complete.
+
 ### pfp cancel
 
 ```bash

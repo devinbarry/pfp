@@ -22,6 +22,15 @@ pub struct Deployment {
     pub parameter_openapi_schema: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DeploymentSchedule {
+    pub id: String,
+    #[serde(default)]
+    pub active: bool,
+    #[serde(default)]
+    pub slug: Option<String>,
+}
+
 impl Deployment {
     pub fn full_name(&self) -> String {
         format!("{}/{}", self.flow_name, self.name)

@@ -34,7 +34,18 @@ fn help_lists_subcommands() {
         .stdout(predicate::str::contains("logs"))
         .stdout(predicate::str::contains("pause"))
         .stdout(predicate::str::contains("resume"))
+        .stdout(predicate::str::contains("schedule-resume"))
         .stdout(predicate::str::contains("cancel"));
+}
+
+#[test]
+fn schedule_resume_requires_a_query() {
+    cargo_bin_cmd!("pfp")
+        .arg("schedule-resume")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("<QUERY>"));
 }
 
 /// Exact inspection deliberately rejects prefixes so concurrent run volume

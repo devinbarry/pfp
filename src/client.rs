@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::error::{PfpError, Result};
+use crate::models::DeploymentSchedule;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
@@ -212,6 +213,28 @@ impl PrefectClient {
             .await
     }
 
+    pub async fn read_deployment_schedules(
+        &self,
+        deployment_id: &str,
+    ) -> Result<Vec<DeploymentSchedule>> {
+        self.get(&format!("/deployments/{}/schedules", deployment_id))
+            .await
+    }
+
+    pub async fn set_deployment_schedule_active(
+        &self,
+        deployment_id: &str,
+        schedule_id: &str,
+        active: bool,
+    ) -> Result<()> {
+        let body = serde_json::json!({ "active": active });
+        self.patch_no_content(
+            &format!("/deployments/{}/schedules/{}", deployment_id, schedule_id),
+            &body,
+        )
+        .await
+    }
+
     pub async fn cancel_flow_run(&self, flow_run_id: &str) -> Result<serde_json::Value> {
         let body = serde_json::json!({
             "state": {
@@ -334,6 +357,55 @@ mod tests {
         let result = client.set_deployment_paused("dep-id", true).await;
 
         assert!(result.is_ok());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn reads_deployment_schedules() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/deployments/dep-id/schedules")
+            .match_header("authorization", "Basic dGVzdDp0ZXN0")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"[{"id":"schedule-1","active":false,"slug":"daily"},{"id":"schedule-2","active":true}]"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        let schedules = test_client(&server)
+            .read_deployment_schedules("dep-id")
+            .await
+            .unwrap();
+
+        assert_eq!(schedules.len(), 2);
+        assert!(!schedules[0].active);
+        assert_eq!(schedules[0].slug.as_deref(), Some("daily"));
+        assert!(schedules[1].active);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn updates_one_deployment_schedule_active_state() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("PATCH", "/deployments/dep-id/schedules/schedule-1")
+            .match_header("authorization", "Basic dGVzdDp0ZXN0")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({"active": true}).to_string(),
+            ))
+            .with_status(204)
+            .expect(1)
+            .create_async()
+            .await;
+
+        test_client(&server)
+            .set_deployment_schedule_active("dep-id", "schedule-1", true)
+            .await
+            .unwrap();
+
         mock.assert_async().await;
     }
 
