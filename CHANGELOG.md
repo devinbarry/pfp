@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.2] - 2026-07-19
+
+### Added
+
+- `pfp inspect <flow-run-uuid> [--json]` fetches one exact flow run directly by its full UUID. It is not limited to recent runs and deliberately rejects prefixes, making terminal-state checks reliable under concurrent run volume.
+
 ## [0.5.1] - 2026-07-08
 
 ### Added
