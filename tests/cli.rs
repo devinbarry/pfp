@@ -30,10 +30,27 @@ fn help_lists_subcommands() {
         .stdout(predicate::str::contains("ls"))
         .stdout(predicate::str::contains("run"))
         .stdout(predicate::str::contains("runs"))
+        .stdout(predicate::str::contains("inspect"))
         .stdout(predicate::str::contains("logs"))
         .stdout(predicate::str::contains("pause"))
         .stdout(predicate::str::contains("resume"))
         .stdout(predicate::str::contains("cancel"));
+}
+
+/// Exact inspection deliberately rejects prefixes so concurrent run volume
+/// cannot change which run is inspected.
+#[test]
+fn inspect_requires_full_uuid() {
+    cargo_bin_cmd!("pfp")
+        .args(["inspect", "e130c152", "--json"])
+        .env("PREFECT_API_URL", "http://127.0.0.1:1")
+        .env_remove("PREFECT_API_AUTH_STRING")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "inspect requires a full flow run UUID",
+        ));
 }
 
 /// Malformed JSON piped via `--params-file -` is rejected with exit code 2,

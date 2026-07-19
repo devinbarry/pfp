@@ -51,6 +51,13 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Inspect one flow run by its full UUID
+    Inspect {
+        /// Full flow run UUID
+        flow_run_id: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Show logs for a flow run
     Logs {
         /// Flow run ID or UUID prefix
@@ -143,6 +150,10 @@ fn describe_command(
             "runs".into(),
             serde_json::json!({ "query": query, "json": json }),
         ),
+        Commands::Inspect { flow_run_id, json } => (
+            "inspect".into(),
+            serde_json::json!({ "flow_run_id": flow_run_id, "json": json }),
+        ),
         Commands::Logs {
             flow_run_id,
             limit,
@@ -185,6 +196,11 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
             let config = Config::load()?;
             let client = PrefectClient::new(config);
             commands::runs::run(client, query, json).await
+        }
+        Commands::Inspect { flow_run_id, json } => {
+            let config = Config::load()?;
+            let client = PrefectClient::new(config);
+            commands::inspect::run(client, flow_run_id, json).await
         }
         Commands::Logs {
             flow_run_id,

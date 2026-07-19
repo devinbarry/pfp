@@ -115,6 +115,17 @@ production-plan            COMPLETED    2026-02-21 00:05     3s         7137cfe7
 pfp runs happy-t --json    # JSON array of flow run objects
 ```
 
+### pfp inspect
+
+Fetch one flow run by its full UUID. Unlike `pfp runs`, this performs an exact
+lookup and is not limited to recent runs, so it is safe for automation even
+when many runs are created concurrently.
+
+```bash
+pfp inspect e130c152-db01-428a-9698-e8404cd2c5d3
+pfp inspect e130c152-db01-428a-9698-e8404cd2c5d3 --json
+```
+
 ### pfp logs
 
 Show logs for a flow run (requires full UUID):
