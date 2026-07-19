@@ -81,6 +81,11 @@ enum Commands {
         /// Deployment name (substring match)
         query: String,
     },
+    /// Activate every schedule attached to a deployment
+    ScheduleResume {
+        /// Deployment name (substring match)
+        query: String,
+    },
     /// Cancel a running flow run
     Cancel {
         /// Flow run ID or UUID prefix
@@ -165,6 +170,10 @@ fn describe_command(
         ),
         Commands::Pause { query } => ("pause".into(), serde_json::json!({ "query": query })),
         Commands::Resume { query } => ("resume".into(), serde_json::json!({ "query": query })),
+        Commands::ScheduleResume { query } => (
+            "schedule-resume".into(),
+            serde_json::json!({ "query": query }),
+        ),
         Commands::Cancel { flow_run_id } => (
             "cancel".into(),
             serde_json::json!({ "flow_run_id": flow_run_id }),
@@ -221,6 +230,11 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
             let config = Config::load()?;
             let client = PrefectClient::new(config);
             commands::resume::run(client, query).await
+        }
+        Commands::ScheduleResume { query } => {
+            let config = Config::load()?;
+            let client = PrefectClient::new(config);
+            commands::schedule_resume::run(client, query).await
         }
         Commands::Cancel { flow_run_id } => {
             let config = Config::load()?;
