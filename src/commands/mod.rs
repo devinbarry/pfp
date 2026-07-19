@@ -1,4 +1,5 @@
 pub mod cancel;
+pub mod inspect;
 pub mod logs;
 pub mod ls;
 pub mod pause;
