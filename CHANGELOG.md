@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.4] - 2026-07-24
+
+### Fixed
+
+- Deployment discovery now follows Prefect pagination instead of stopping after
+  the first 100 deployments. Commands such as `pfp run`, `pfp runs`, `pfp pause`,
+  and `pfp resume` can therefore resolve every registered deployment.
+
+### Changed
+
+- Repository guidance now uses `AGENTS.md` and explicitly requires the complete
+  Justfile release workflow for every shipped change.
+
 ## [0.5.3] - 2026-07-19
 
 ### Added
