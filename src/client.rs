@@ -76,12 +76,22 @@ impl PrefectClient {
     // -- Prefect API methods --
 
     pub async fn list_deployments(&self) -> Result<Vec<serde_json::Value>> {
-        let body = serde_json::json!({
-            "limit": 100,
-            "offset": 0
-        });
-        let mut deployments: Vec<serde_json::Value> =
-            self.post("/deployments/filter", &body).await?;
+        const PAGE_SIZE: usize = 100;
+        let mut deployments = Vec::new();
+
+        loop {
+            let body = serde_json::json!({
+                "limit": PAGE_SIZE,
+                "offset": deployments.len()
+            });
+            let page: Vec<serde_json::Value> = self.post("/deployments/filter", &body).await?;
+            let page_len = page.len();
+            deployments.extend(page);
+
+            if page_len < PAGE_SIZE {
+                break;
+            }
+        }
 
         // Collect unique flow_ids to resolve flow names
         let flow_ids: Vec<String> = deployments
@@ -285,6 +295,58 @@ mod tests {
         assert_eq!(result[0]["name"], "test-deploy");
         assert_eq!(result[0]["flow_name"], "test_flow");
         deploy_mock.assert_async().await;
+        flow_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn list_deployments_fetches_every_page() {
+        let mut server = mockito::Server::new_async().await;
+        let first_page: Vec<serde_json::Value> = (0..100)
+            .map(|index| {
+                serde_json::json!({
+                    "name": format!("deployment-{index}"),
+                    "flow_id": "flow-1"
+                })
+            })
+            .collect();
+        let first_page_mock = server
+            .mock("POST", "/deployments/filter")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({"limit": 100, "offset": 0}).to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&first_page).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let second_page_mock = server
+            .mock("POST", "/deployments/filter")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({"limit": 100, "offset": 100}).to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"name":"deployment-100","flow_id":"flow-1"}]"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let flow_mock = server
+            .mock("POST", "/flows/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"id":"flow-1","name":"test_flow"}]"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let result = test_client(&server).list_deployments().await.unwrap();
+
+        assert_eq!(result.len(), 101);
+        assert_eq!(result[100]["name"], "deployment-100");
+        assert_eq!(result[100]["flow_name"], "test_flow");
+        first_page_mock.assert_async().await;
+        second_page_mock.assert_async().await;
         flow_mock.assert_async().await;
     }
 
