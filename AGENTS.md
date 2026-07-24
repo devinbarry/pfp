@@ -17,12 +17,13 @@ just install        # cargo install --path . --force (to ~/.cargo/bin)
 
 ## Release Process
 
-Two-step release via justfile:
+Every change that is intended to ship must go through the complete two-step release
+workflow in the justfile. Do not stop after an ordinary commit and push:
 
 ```sh
 just release-prep patch   # (or minor/major) bump version, generate changelog draft
 # Edit CHANGELOG.md with release notes
-# Review changes: git diff
+# Run just check and review the complete git diff
 just release-finish       # commit, tag, push, install
 ```
 
