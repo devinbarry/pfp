@@ -107,6 +107,13 @@ enum PoolAction {
         #[arg(long)]
         json: bool,
     },
+    /// Fail unless one exact work pool has no nonterminal flow runs
+    AssertIdle {
+        /// Exact work pool name
+        name: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Pause one exact work pool
     Pause {
         /// Exact work pool name
@@ -209,6 +216,10 @@ fn describe_command(
                 "pool status".into(),
                 serde_json::json!({ "name": name, "json": json }),
             ),
+            PoolAction::AssertIdle { name, json } => (
+                "pool assert-idle".into(),
+                serde_json::json!({ "name": name, "json": json }),
+            ),
             PoolAction::Pause { name } => {
                 ("pool pause".into(), serde_json::json!({ "name": name }))
             }
@@ -286,6 +297,9 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
                 PoolAction::Status { name, json } => {
                     commands::pool::status(client, name, json).await
                 }
+                PoolAction::AssertIdle { name, json } => {
+                    commands::pool::assert_idle(client, name, json).await
+                }
                 PoolAction::Pause { name } => commands::pool::set_paused(client, name, true).await,
                 PoolAction::Resume { name } => {
                     commands::pool::set_paused(client, name, false).await
@@ -320,6 +334,22 @@ mod tests {
         for action in ["pause", "resume"] {
             let cli = Cli::try_parse_from(["pfp", "pool", action, "docker-secure"]).unwrap();
             assert!(matches!(cli.command, Commands::Pool { .. }));
+        }
+    }
+
+    #[test]
+    fn parses_pool_assert_idle_json() {
+        let cli =
+            Cli::try_parse_from(["pfp", "pool", "assert-idle", "docker-secure", "--json"]).unwrap();
+
+        match cli.command {
+            Commands::Pool {
+                action: PoolAction::AssertIdle { name, json },
+            } => {
+                assert_eq!(name, "docker-secure");
+                assert!(json);
+            }
+            _ => panic!("expected pool assert-idle command"),
         }
     }
 }
