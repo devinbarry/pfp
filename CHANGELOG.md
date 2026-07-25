@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.6] - 2026-07-25
+
+### Added
+
+- `pfp pool assert-idle <exact-pool-name>` fails with exit code 2 unless
+  Prefect reports zero nonterminal flow runs for the whole work pool.
+- `--json` returns stable `pool`, `idle`, and `nonterminal_run_count` fields
+  for both idle and non-idle results without fetching or exposing run
+  parameters.
+
 ## [0.5.5] - 2026-07-25
 
 ### Added
