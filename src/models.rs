@@ -31,6 +31,18 @@ pub struct DeploymentSchedule {
     pub slug: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct WorkPool {
+    pub name: String,
+    #[serde(default)]
+    pub r#type: Option<String>,
+    pub is_paused: bool,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub concurrency_limit: Option<u64>,
+}
+
 impl Deployment {
     pub fn full_name(&self) -> String {
         format!("{}/{}", self.flow_name, self.name)
@@ -285,5 +297,23 @@ mod tests {
         }))
         .unwrap();
         assert!(d.parameter_openapi_schema.is_none());
+    }
+
+    #[test]
+    fn work_pool_deserializes_status() {
+        let pool: WorkPool = serde_json::from_value(json!({
+            "name": "docker-secure",
+            "type": "docker",
+            "is_paused": true,
+            "status": "PAUSED",
+            "concurrency_limit": 1
+        }))
+        .unwrap();
+
+        assert_eq!(pool.name, "docker-secure");
+        assert_eq!(pool.r#type.as_deref(), Some("docker"));
+        assert!(pool.is_paused);
+        assert_eq!(pool.status.as_deref(), Some("PAUSED"));
+        assert_eq!(pool.concurrency_limit, Some(1));
     }
 }

@@ -1,4 +1,4 @@
-use crate::models::{Deployment, FlowRun, LogEntry};
+use crate::models::{Deployment, FlowRun, LogEntry, WorkPool};
 use colored::Colorize;
 
 pub fn state_color(state: &str) -> colored::ColoredString {
@@ -41,6 +41,18 @@ pub fn print_flow_runs_table(runs: &[FlowRun]) {
             r.short_id(),
         );
     }
+}
+
+pub fn print_work_pool(pool: &WorkPool) {
+    let status = pool.status.as_deref().unwrap_or("UNKNOWN");
+    let status = state_color(status);
+    println!(
+        "{:<30} {:<12} {:<8} {}",
+        pool.name,
+        status,
+        if pool.is_paused { "yes" } else { "no" },
+        pool.r#type.as_deref().unwrap_or("-"),
+    );
 }
 
 pub fn print_logs(logs: &[LogEntry]) {

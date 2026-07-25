@@ -11,6 +11,7 @@ pfp talks directly to the Prefect REST API, bypassing the official CLI's limitat
 - **`--watch` that works** — polls until completion with state change reporting
 - **Dotted path parameters** — `--set config.action=destroy` builds nested JSON
 - **Parameter validation** — typos caught before submission with "did you mean?" suggestions
+- **Work-pool controls** — inspect, pause, or resume one exact pool name
 - **`--json` on everything** — structured output for programmatic consumption
 - **Full deployment names** — no truncation, ever
 
@@ -167,6 +168,21 @@ and reports whether that rollback was complete.
 ```bash
 pfp cancel e130c152-db01-428a-9698-e8404cd2c5d3    # cancel a running flow run
 ```
+
+### pfp pool
+
+Inspect or change one exact work pool name:
+
+```bash
+pfp pool status docker-secure
+pfp pool status docker-secure --json
+pfp pool pause docker-secure
+pfp pool resume docker-secure
+```
+
+Pool names are exact rather than substring-matched. Pause and resume read the
+pool back after the API update and fail if its `is_paused` state did not
+converge.
 
 ## Substring matching
 

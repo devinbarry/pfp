@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::error::{PfpError, Result};
-use crate::models::DeploymentSchedule;
+use crate::models::{DeploymentSchedule, WorkPool};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
@@ -256,6 +256,43 @@ impl PrefectClient {
         self.post(&format!("/flow_runs/{}/set_state", flow_run_id), &body)
             .await
     }
+
+    pub async fn get_work_pool(&self, name: &str) -> Result<WorkPool> {
+        let path = work_pool_path(name)?;
+        self.get(&path).await
+    }
+
+    pub async fn set_work_pool_paused(&self, name: &str, paused: bool) -> Result<WorkPool> {
+        let path = work_pool_path(name)?;
+        let body = serde_json::json!({ "is_paused": paused });
+        self.patch_no_content(&path, &body).await?;
+
+        let pool = self.get_work_pool(name).await?;
+        if pool.is_paused != paused {
+            return Err(PfpError::Api(format!(
+                "work pool {name:?} did not converge to is_paused={paused}"
+            )));
+        }
+        Ok(pool)
+    }
+}
+
+fn work_pool_path(name: &str) -> Result<String> {
+    if name.is_empty() || name.contains('/') {
+        return Err(PfpError::Validation(
+            "work pool name must not be empty or contain '/'".to_string(),
+        ));
+    }
+
+    let mut url = reqwest::Url::parse("http://pfp.invalid/work_pools/")
+        .map_err(|error| PfpError::Config(format!("invalid internal work-pool URL: {error}")))?;
+    url.path_segments_mut()
+        .map_err(|_| {
+            PfpError::Config("internal work-pool URL cannot hold path segments".to_string())
+        })?
+        .pop_if_empty()
+        .push(name);
+    Ok(url.path().to_string())
 }
 
 #[cfg(test)]
@@ -628,5 +665,148 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), PfpError::Api(ref msg) if msg.contains("500")));
         mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn gets_exact_work_pool() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/work_pools/docker-secure")
+            .match_header("authorization", "Basic dGVzdDp0ZXN0")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"name":"docker-secure","type":"docker","is_paused":true,"status":"PAUSED"}"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        let pool = test_client(&server)
+            .get_work_pool("docker-secure")
+            .await
+            .unwrap();
+
+        assert_eq!(pool.name, "docker-secure");
+        assert_eq!(pool.r#type.as_deref(), Some("docker"));
+        assert!(pool.is_paused);
+        assert_eq!(pool.status.as_deref(), Some("PAUSED"));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn updates_and_verifies_work_pool_pause_state() {
+        let mut server = mockito::Server::new_async().await;
+        let patch = server
+            .mock("PATCH", "/work_pools/docker-secure")
+            .match_header("authorization", "Basic dGVzdDp0ZXN0")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({"is_paused": false}).to_string(),
+            ))
+            .with_status(204)
+            .expect(1)
+            .create_async()
+            .await;
+        let get = server
+            .mock("GET", "/work_pools/docker-secure")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"name":"docker-secure","type":"docker","is_paused":false,"status":"READY"}"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        let pool = test_client(&server)
+            .set_work_pool_paused("docker-secure", false)
+            .await
+            .unwrap();
+
+        assert!(!pool.is_paused);
+        patch.assert_async().await;
+        get.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn rejects_unverified_work_pool_pause_state() {
+        let mut server = mockito::Server::new_async().await;
+        let patch = server
+            .mock("PATCH", "/work_pools/docker-secure")
+            .with_status(204)
+            .expect(1)
+            .create_async()
+            .await;
+        let get = server
+            .mock("GET", "/work_pools/docker-secure")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"name":"docker-secure","is_paused":true,"status":"PAUSED"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let error = test_client(&server)
+            .set_work_pool_paused("docker-secure", false)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(error, PfpError::Api(ref message) if message.contains("did not converge"))
+        );
+        patch.assert_async().await;
+        get.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_work_pool_name_before_http() {
+        let server = mockito::Server::new_async().await;
+        let client = test_client(&server);
+
+        for name in ["", "pool/queue"] {
+            let error = client.get_work_pool(name).await.unwrap_err();
+            assert!(matches!(error, PfpError::Validation(_)));
+        }
+    }
+
+    #[test]
+    fn encodes_work_pool_name_as_one_path_segment() {
+        for (name, expected) in [
+            ("docker-secure", "/work_pools/docker-secure"),
+            ("pool\\queue", "/work_pools/pool%5Cqueue"),
+            ("pool%2Fqueue", "/work_pools/pool%252Fqueue"),
+            ("pool?query", "/work_pools/pool%3Fquery"),
+            ("pool#fragment", "/work_pools/pool%23fragment"),
+        ] {
+            assert_eq!(work_pool_path(name).unwrap(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn resume_fails_if_verification_response_omits_pause_state() {
+        let mut server = mockito::Server::new_async().await;
+        let patch = server
+            .mock("PATCH", "/work_pools/docker-secure")
+            .with_status(204)
+            .expect(1)
+            .create_async()
+            .await;
+        let get = server
+            .mock("GET", "/work_pools/docker-secure")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"name":"docker-secure","status":"READY"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let error = test_client(&server)
+            .set_work_pool_paused("docker-secure", false)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, PfpError::Http(_)));
+        patch.assert_async().await;
+        get.assert_async().await;
     }
 }
