@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.5] - 2026-07-25
+
+### Added
+
+- `pfp pool status`, `pfp pool pause`, and `pfp pool resume` operate on one
+  exact work-pool name. Mutations read the pool back and fail unless
+  `is_paused` reaches the requested state.
+
+### Fixed
+
+- Work-pool names are encoded as one URL segment and names containing `/` are
+  rejected before any request, preventing decoded paths from reaching a
+  different Prefect endpoint.
+- GitLab release pipelines no longer run duplicate jobs for the same release.
+
 ## [0.5.4] - 2026-07-24
 
 ### Fixed
