@@ -91,6 +91,32 @@ enum Commands {
         /// Flow run ID or UUID prefix
         flow_run_id: String,
     },
+    /// Inspect or change an exact work pool
+    Pool {
+        #[command(subcommand)]
+        action: PoolAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum PoolAction {
+    /// Show one exact work pool
+    Status {
+        /// Exact work pool name
+        name: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Pause one exact work pool
+    Pause {
+        /// Exact work pool name
+        name: String,
+    },
+    /// Resume one exact work pool
+    Resume {
+        /// Exact work pool name
+        name: String,
+    },
 }
 
 #[tokio::main]
@@ -178,6 +204,18 @@ fn describe_command(
             "cancel".into(),
             serde_json::json!({ "flow_run_id": flow_run_id }),
         ),
+        Commands::Pool { action } => match action {
+            PoolAction::Status { name, json } => (
+                "pool status".into(),
+                serde_json::json!({ "name": name, "json": json }),
+            ),
+            PoolAction::Pause { name } => {
+                ("pool pause".into(), serde_json::json!({ "name": name }))
+            }
+            PoolAction::Resume { name } => {
+                ("pool resume".into(), serde_json::json!({ "name": name }))
+            }
+        },
     }
 }
 
@@ -240,6 +278,48 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
             let config = Config::load()?;
             let client = PrefectClient::new(config);
             commands::cancel::run(client, flow_run_id).await
+        }
+        Commands::Pool { action } => {
+            let config = Config::load()?;
+            let client = PrefectClient::new(config);
+            match action {
+                PoolAction::Status { name, json } => {
+                    commands::pool::status(client, name, json).await
+                }
+                PoolAction::Pause { name } => commands::pool::set_paused(client, name, true).await,
+                PoolAction::Resume { name } => {
+                    commands::pool::set_paused(client, name, false).await
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_pool_status_json() {
+        let cli =
+            Cli::try_parse_from(["pfp", "pool", "status", "docker-secure", "--json"]).unwrap();
+
+        match cli.command {
+            Commands::Pool {
+                action: PoolAction::Status { name, json },
+            } => {
+                assert_eq!(name, "docker-secure");
+                assert!(json);
+            }
+            _ => panic!("expected pool status command"),
+        }
+    }
+
+    #[test]
+    fn parses_pool_pause_and_resume() {
+        for action in ["pause", "resume"] {
+            let cli = Cli::try_parse_from(["pfp", "pool", action, "docker-secure"]).unwrap();
+            assert!(matches!(cli.command, Commands::Pool { .. }));
         }
     }
 }
