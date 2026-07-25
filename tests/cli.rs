@@ -102,6 +102,72 @@ fn logs_tail_flag_is_accepted_by_parser() {
         .stderr(predicate::str::contains("unexpected argument").not());
 }
 
+#[test]
+fn pool_assert_idle_json_succeeds_with_stable_result() {
+    let mut server = mockito::Server::new();
+    let pool = server
+        .mock("GET", "/work_pools/docker-secure")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"name":"docker-secure","is_paused":true,"status":"PAUSED"}"#)
+        .expect(1)
+        .create();
+    let count = server
+        .mock("POST", "/flow_runs/count")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body("0")
+        .expect(1)
+        .create();
+
+    cargo_bin_cmd!("pfp")
+        .args(["pool", "assert-idle", "docker-secure", "--json"])
+        .env("PREFECT_API_URL", server.url())
+        .env_remove("PREFECT_API_AUTH_STRING")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""pool": "docker-secure""#))
+        .stdout(predicate::str::contains(r#""idle": true"#))
+        .stdout(predicate::str::contains(r#""nonterminal_run_count": 0"#));
+
+    pool.assert();
+    count.assert();
+}
+
+#[test]
+fn pool_assert_idle_json_fails_with_count() {
+    let mut server = mockito::Server::new();
+    let pool = server
+        .mock("GET", "/work_pools/docker-secure")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"name":"docker-secure","is_paused":true,"status":"PAUSED"}"#)
+        .expect(1)
+        .create();
+    let count = server
+        .mock("POST", "/flow_runs/count")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body("2")
+        .expect(1)
+        .create();
+
+    cargo_bin_cmd!("pfp")
+        .args(["pool", "assert-idle", "docker-secure", "--json"])
+        .env("PREFECT_API_URL", server.url())
+        .env_remove("PREFECT_API_AUTH_STRING")
+        .assert()
+        .failure()
+        .code(2)
+        .stdout(predicate::str::contains(r#""pool": "docker-secure""#))
+        .stdout(predicate::str::contains(r#""idle": false"#))
+        .stdout(predicate::str::contains(r#""nonterminal_run_count": 2"#))
+        .stderr(predicate::str::contains("is not idle"));
+
+    pool.assert();
+    count.assert();
+}
+
 /// Valid JSON piped via `--params-file -` is read exactly once: it parses
 /// successfully and execution proceeds past parsing to the (unreachable) API,
 /// rather than failing with an empty-stdin JSON/EOF error. Regression guard

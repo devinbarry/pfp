@@ -262,6 +262,25 @@ impl PrefectClient {
         self.get(&path).await
     }
 
+    pub async fn count_nonterminal_flow_runs_for_work_pool(&self, name: &str) -> Result<u64> {
+        validate_work_pool_name(name)?;
+        let body = serde_json::json!({
+            "work_pools": {
+                "name": {
+                    "any_": [name]
+                }
+            },
+            "flow_runs": {
+                "state": {
+                    "type": {
+                        "not_any_": ["COMPLETED", "FAILED", "CANCELLED", "CRASHED"]
+                    }
+                }
+            }
+        });
+        self.post("/flow_runs/count", &body).await
+    }
+
     pub async fn set_work_pool_paused(&self, name: &str, paused: bool) -> Result<WorkPool> {
         let path = work_pool_path(name)?;
         let body = serde_json::json!({ "is_paused": paused });
@@ -278,11 +297,7 @@ impl PrefectClient {
 }
 
 fn work_pool_path(name: &str) -> Result<String> {
-    if name.is_empty() || name.contains('/') {
-        return Err(PfpError::Validation(
-            "work pool name must not be empty or contain '/'".to_string(),
-        ));
-    }
+    validate_work_pool_name(name)?;
 
     let mut url = reqwest::Url::parse("http://pfp.invalid/work_pools/")
         .map_err(|error| PfpError::Config(format!("invalid internal work-pool URL: {error}")))?;
@@ -293,6 +308,15 @@ fn work_pool_path(name: &str) -> Result<String> {
         .pop_if_empty()
         .push(name);
     Ok(url.path().to_string())
+}
+
+fn validate_work_pool_name(name: &str) -> Result<()> {
+    if name.is_empty() || name.contains('/') {
+        return Err(PfpError::Validation(
+            "work pool name must not be empty or contain '/'".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -695,6 +719,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn counts_every_nonterminal_flow_run_for_exact_work_pool() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/flow_runs/count")
+            .match_header("authorization", "Basic dGVzdDp0ZXN0")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({
+                    "work_pools": {
+                        "name": {
+                            "any_": ["docker-secure"]
+                        }
+                    },
+                    "flow_runs": {
+                        "state": {
+                            "type": {
+                                "not_any_": [
+                                    "COMPLETED",
+                                    "FAILED",
+                                    "CANCELLED",
+                                    "CRASHED"
+                                ]
+                            }
+                        }
+                    }
+                })
+                .to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body("3")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let count = test_client(&server)
+            .count_nonterminal_flow_runs_for_work_pool("docker-secure")
+            .await
+            .unwrap();
+
+        assert_eq!(count, 3);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn updates_and_verifies_work_pool_pause_state() {
         let mut server = mockito::Server::new_async().await;
         let patch = server
@@ -765,6 +833,12 @@ mod tests {
 
         for name in ["", "pool/queue"] {
             let error = client.get_work_pool(name).await.unwrap_err();
+            assert!(matches!(error, PfpError::Validation(_)));
+
+            let error = client
+                .count_nonterminal_flow_runs_for_work_pool(name)
+                .await
+                .unwrap_err();
             assert!(matches!(error, PfpError::Validation(_)));
         }
     }

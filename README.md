@@ -11,7 +11,7 @@ pfp talks directly to the Prefect REST API, bypassing the official CLI's limitat
 - **`--watch` that works** — polls until completion with state change reporting
 - **Dotted path parameters** — `--set config.action=destroy` builds nested JSON
 - **Parameter validation** — typos caught before submission with "did you mean?" suggestions
-- **Work-pool controls** — inspect, pause, or resume one exact pool name
+- **Work-pool controls** — inspect, assert idle, pause, or resume one exact pool name
 - **`--json` on everything** — structured output for programmatic consumption
 - **Full deployment names** — no truncation, ever
 
@@ -176,13 +176,17 @@ Inspect or change one exact work pool name:
 ```bash
 pfp pool status docker-secure
 pfp pool status docker-secure --json
+pfp pool assert-idle docker-secure
+pfp pool assert-idle docker-secure --json
 pfp pool pause docker-secure
 pfp pool resume docker-secure
 ```
 
 Pool names are exact rather than substring-matched. Pause and resume read the
 pool back after the API update and fail if its `is_paused` state did not
-converge.
+converge. `assert-idle` exits successfully only when Prefect reports zero
+nonterminal flow runs for the whole pool. Its JSON result includes `idle` and
+`nonterminal_run_count`; a non-idle result exits with code 2.
 
 ## Substring matching
 
