@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.8] - 2026-08-04
+
+### Added
+
+- Profiles may now carry `PREFECT_API_AUTH_STRING` beside
+  `PREFECT_API_URL`. An explicit `--server <PROFILE>` selects both values as
+  one atomic pair and ignores process-wide URL and authentication overrides,
+  preventing one server's credential from being sent to another server.
+- The active profile supplies its authentication when no environment override
+  is present; existing environment-driven operation remains compatible.
+
 ## [0.5.7] - 2026-08-03
 
 ### Added
