@@ -49,6 +49,7 @@ fn explicit_server_selects_named_profile_instead_of_environment_url() {
     let mut selected_server = mockito::Server::new();
     let selected_request = selected_server
         .mock("POST", "/deployments/filter")
+        .match_header("authorization", "Basic bm9ybWE6c2VjcmV0")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body("[]")
@@ -62,9 +63,11 @@ fn explicit_server_selects_named_profile_instead_of_environment_url() {
 
 [profiles.default]
 PREFECT_API_URL = "http://127.0.0.1:1"
+PREFECT_API_AUTH_STRING = "default:secret"
 
 [profiles.norma]
 PREFECT_API_URL = "{}"
+PREFECT_API_AUTH_STRING = "norma:secret"
 "#,
             selected_server.url()
         ),
@@ -74,6 +77,42 @@ PREFECT_API_URL = "{}"
         .args(["--server", "norma", "ls", "--json"])
         .env("HOME", home.path())
         .env("PREFECT_API_URL", "http://127.0.0.1:1")
+        .env("PREFECT_API_AUTH_STRING", "environment:wrong")
+        .assert()
+        .success();
+
+    selected_request.assert();
+}
+
+#[test]
+fn active_profile_auth_is_used_when_environment_is_absent() {
+    let mut selected_server = mockito::Server::new();
+    let selected_request = selected_server
+        .mock("POST", "/deployments/filter")
+        .match_header("authorization", "Basic cGxlaWFkZXM6c2VjcmV0")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body("[]")
+        .expect(1)
+        .create();
+    let home = tempfile::tempdir().unwrap();
+    write_profiles(
+        home.path(),
+        &format!(
+            r#"active = "pleiades"
+
+[profiles.pleiades]
+PREFECT_API_URL = "{}"
+PREFECT_API_AUTH_STRING = "pleiades:secret"
+"#,
+            selected_server.url()
+        ),
+    );
+
+    cargo_bin_cmd!("pfp")
+        .args(["ls", "--json"])
+        .env("HOME", home.path())
+        .env_remove("PREFECT_API_URL")
         .env_remove("PREFECT_API_AUTH_STRING")
         .assert()
         .success();
