@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.7] - 2026-08-03
+
+### Added
+
+- Global `--server <PROFILE>` selection resolves the named profile's
+  `PREFECT_API_URL` for every command. Unknown profiles fail without falling
+  back to the environment or active profile; omitting the flag preserves the
+  existing environment-first configuration behavior.
+- Every flow run created by `pfp run` is tagged `manual`. Repeatable
+  `--tag <TAG>` options add further run tags without replacing `manual`.
+
 ## [0.5.6] - 2026-07-25
 
 ### Added
