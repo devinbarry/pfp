@@ -18,6 +18,10 @@ use std::time::Instant;
 #[derive(Parser)]
 #[command(name = "pfp", version, about = "Prefect CLI")]
 struct Cli {
+    /// Prefect profile name whose API URL should be used
+    #[arg(long, global = true)]
+    server: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -37,6 +41,9 @@ enum Commands {
         watch: bool,
         #[arg(long = "set", num_args = 1)]
         sets: Vec<String>,
+        /// Additional flow-run tag (repeatable; "manual" is always included)
+        #[arg(long = "tag", num_args = 1)]
+        tags: Vec<String>,
         /// Read flow-run parameters as JSON from a file, or "-" for stdin.
         /// Merged under any --set overrides (--set wins).
         #[arg(long = "params-file")]
@@ -166,6 +173,7 @@ fn describe_command(
             query,
             watch,
             sets,
+            tags,
             params_file,
             json,
         } => {
@@ -179,6 +187,7 @@ fn describe_command(
                     "query": query,
                     "watch": watch,
                     "sets": sets,
+                    "tags": tags,
                     "params_file": params_log,
                     "json": json,
                 }),
@@ -231,9 +240,10 @@ fn describe_command(
 }
 
 async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Result<()> {
-    match cli.command {
+    let Cli { server, command } = cli;
+    match command {
         Commands::Ls { json } => {
-            let config = Config::load()?;
+            let config = Config::load(server.as_deref())?;
             let client = PrefectClient::new(config);
             commands::ls::run(client, json).await
         }
@@ -241,22 +251,23 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
             query,
             watch,
             sets,
+            tags,
             json,
             ..
         } => {
             // Surface a bad --params-file before any config/network work.
             let params_base = params_payload.transpose()?;
-            let config = Config::load()?;
+            let config = Config::load(server.as_deref())?;
             let client = PrefectClient::new(config);
-            commands::run::run(client, query, watch, sets, params_base, json).await
+            commands::run::run(client, query, watch, sets, tags, params_base, json).await
         }
         Commands::Runs { query, json } => {
-            let config = Config::load()?;
+            let config = Config::load(server.as_deref())?;
             let client = PrefectClient::new(config);
             commands::runs::run(client, query, json).await
         }
         Commands::Inspect { flow_run_id, json } => {
-            let config = Config::load()?;
+            let config = Config::load(server.as_deref())?;
             let client = PrefectClient::new(config);
             commands::inspect::run(client, flow_run_id, json).await
         }
@@ -266,32 +277,32 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
             follow,
             json,
         } => {
-            let config = Config::load()?;
+            let config = Config::load(server.as_deref())?;
             let client = PrefectClient::new(config);
             commands::logs::run(client, flow_run_id, limit, follow, json).await
         }
         Commands::Pause { query } => {
-            let config = Config::load()?;
+            let config = Config::load(server.as_deref())?;
             let client = PrefectClient::new(config);
             commands::pause::run(client, query).await
         }
         Commands::Resume { query } => {
-            let config = Config::load()?;
+            let config = Config::load(server.as_deref())?;
             let client = PrefectClient::new(config);
             commands::resume::run(client, query).await
         }
         Commands::ScheduleResume { query } => {
-            let config = Config::load()?;
+            let config = Config::load(server.as_deref())?;
             let client = PrefectClient::new(config);
             commands::schedule_resume::run(client, query).await
         }
         Commands::Cancel { flow_run_id } => {
-            let config = Config::load()?;
+            let config = Config::load(server.as_deref())?;
             let client = PrefectClient::new(config);
             commands::cancel::run(client, flow_run_id).await
         }
         Commands::Pool { action } => {
-            let config = Config::load()?;
+            let config = Config::load(server.as_deref())?;
             let client = PrefectClient::new(config);
             match action {
                 PoolAction::Status { name, json } => {
@@ -350,6 +361,27 @@ mod tests {
                 assert!(json);
             }
             _ => panic!("expected pool assert-idle command"),
+        }
+    }
+
+    #[test]
+    fn parses_repeated_run_tags() {
+        let cli = Cli::try_parse_from([
+            "pfp",
+            "run",
+            "my-deployment",
+            "--tag",
+            "urgent",
+            "--tag",
+            "operator",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Run { tags, .. } => {
+                assert_eq!(tags, vec!["urgent", "operator"]);
+            }
+            _ => panic!("expected run command"),
         }
     }
 }

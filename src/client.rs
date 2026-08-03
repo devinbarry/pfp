@@ -138,9 +138,17 @@ impl PrefectClient {
         &self,
         deployment_id: &str,
         parameters: serde_json::Value,
+        additional_tags: Vec<String>,
     ) -> Result<serde_json::Value> {
+        let mut tags = vec!["manual".to_string()];
+        for tag in additional_tags {
+            if !tags.contains(&tag) {
+                tags.push(tag);
+            }
+        }
         let body = serde_json::json!({
-            "parameters": parameters
+            "parameters": parameters,
+            "tags": tags
         });
         self.post(
             &format!("/deployments/{}/create_flow_run", deployment_id),
@@ -452,6 +460,9 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("POST", "/deployments/dep-id/create_flow_run")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"tags":["manual","urgent"]}"#.to_string(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(r#"{"id":"run-123","name":"cool-name","state_type":"SCHEDULED"}"#)
@@ -460,7 +471,10 @@ mod tests {
 
         let client = test_client(&server);
         let params = serde_json::json!({"config": {"action": "plan"}});
-        let result = client.create_flow_run("dep-id", params).await.unwrap();
+        let result = client
+            .create_flow_run("dep-id", params, vec!["urgent".to_string()])
+            .await
+            .unwrap();
 
         assert_eq!(result["id"], "run-123");
         assert_eq!(result["name"], "cool-name");
