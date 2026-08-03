@@ -29,6 +29,7 @@ pub async fn run(
     query: String,
     watch: bool,
     sets: Vec<String>,
+    tags: Vec<String>,
     params_base: Option<serde_json::Value>,
     json: bool,
 ) -> Result<()> {
@@ -51,7 +52,9 @@ pub async fn run(
     let parameters = params::merge_params(&deployment.parameters, &overrides);
 
     // Create flow run
-    let run_value = client.create_flow_run(&deployment.id, parameters).await?;
+    let run_value = client
+        .create_flow_run(&deployment.id, parameters, tags)
+        .await?;
     let flow_run: FlowRun =
         serde_json::from_value(run_value.clone()).map_err(|e| PfpError::Api(e.to_string()))?;
 
@@ -212,6 +215,9 @@ mod tests {
             .await;
         let run_mock = server
             .mock("POST", "/deployments/dep-1/create_flow_run")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"tags":["manual"]}"#.to_string(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(r#"{"id":"run-1","name":"cool-run","state_type":"SCHEDULED","state_name":"Scheduled"}"#)
@@ -227,12 +233,58 @@ mod tests {
                 "config.action=destroy".to_string(),
                 "config.dry_run=true".to_string(),
             ],
+            vec![],
             None,
             false,
         )
         .await;
 
         assert!(result.is_ok());
+        deploy_mock.assert_async().await;
+        flow_mock.assert_async().await;
+        run_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn run_additional_tag_is_appended_to_manual() {
+        let mut server = mockito::Server::new_async().await;
+        let deploy_mock = server
+            .mock("POST", "/deployments/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_deployment_without_schema().to_string())
+            .create_async()
+            .await;
+        let flow_mock = server
+            .mock("POST", "/flows/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"id":"flow-1","name":"test_flow"}]"#)
+            .create_async()
+            .await;
+        let run_mock = server
+            .mock("POST", "/deployments/dep-1/create_flow_run")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"tags":["manual","urgent"]}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"id":"run-1","name":"cool-run","state_type":"SCHEDULED","state_name":"Scheduled"}"#)
+            .create_async()
+            .await;
+
+        let result = super::run(
+            test_client(&server),
+            "test-deploy".to_string(),
+            false,
+            vec![],
+            vec!["urgent".to_string()],
+            None,
+            false,
+        )
+        .await;
+
+        assert!(result.is_ok(), "{result:?}");
         deploy_mock.assert_async().await;
         flow_mock.assert_async().await;
         run_mock.assert_async().await;
@@ -268,6 +320,7 @@ mod tests {
             "test-deploy".to_string(),
             false,
             vec!["config.dry_urn=true".to_string()],
+            vec![],
             None,
             false,
         )
@@ -326,6 +379,7 @@ mod tests {
             "test-deploy".to_string(),
             false,
             vec!["config.bogus=true".to_string()],
+            vec![],
             None,
             false,
         )
@@ -368,6 +422,7 @@ mod tests {
             client,
             "test-deploy".to_string(),
             false,
+            vec![],
             vec![],
             None,
             false,
@@ -415,6 +470,7 @@ mod tests {
             "test-deploy".to_string(),
             false,
             vec![],
+            vec![],
             Some(json!({"environment": "production", "config": {"action": "destroy"}})),
             false,
         )
@@ -454,6 +510,7 @@ mod tests {
             client,
             "test-deploy".to_string(),
             false,
+            vec![],
             vec![],
             Some(json!({"config": {"dry_urn": true}})),
             false,
@@ -507,6 +564,7 @@ mod tests {
             "test-deploy".to_string(),
             false,
             vec!["config.action=apply".to_string()],
+            vec![],
             Some(json!({"config": {"action": "destroy"}})),
             false,
         )
@@ -555,6 +613,7 @@ mod tests {
             client,
             "test-deploy".to_string(),
             false,
+            vec![],
             vec![],
             Some(json!({
                 "config": {

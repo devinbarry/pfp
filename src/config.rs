@@ -21,8 +21,8 @@ struct Profile {
 }
 
 impl Config {
-    pub fn load() -> Result<Self> {
-        let api_url = Self::resolve_api_url()?;
+    pub fn load(server: Option<&str>) -> Result<Self> {
+        let api_url = Self::resolve_api_url(server)?;
         let auth_header = Self::resolve_auth();
         Ok(Config {
             api_url,
@@ -30,7 +30,12 @@ impl Config {
         })
     }
 
-    fn resolve_api_url() -> Result<String> {
+    fn resolve_api_url(server: Option<&str>) -> Result<String> {
+        if let Some(server) = server {
+            let profiles = Self::read_profiles()?;
+            return Self::resolve_profile_api_url(&profiles, server);
+        }
+
         // 1. Environment variable override
         if let Ok(url) = std::env::var("PREFECT_API_URL") {
             return Ok(url);
@@ -38,13 +43,18 @@ impl Config {
 
         // 2. Read from profiles.toml
         let profiles = Self::read_profiles()?;
-        let active = profiles.active.unwrap_or_else(|| "default".to_string());
+        let active = profiles.active.as_deref().unwrap_or("default");
+        Self::resolve_profile_api_url(&profiles, active)
+    }
+
+    fn resolve_profile_api_url(profiles: &ProfilesFile, profile_name: &str) -> Result<String> {
         let profile = profiles
             .profiles
-            .and_then(|p| p.into_iter().find(|(k, _)| *k == active).map(|(_, v)| v))
-            .ok_or_else(|| PfpError::Config(format!("Profile '{}' not found", active)))?;
+            .as_ref()
+            .and_then(|profiles| profiles.get(profile_name))
+            .ok_or_else(|| PfpError::Config(format!("Profile '{}' not found", profile_name)))?;
 
-        profile.api_url.ok_or(PfpError::NoApiUrl)
+        profile.api_url.clone().ok_or(PfpError::NoApiUrl)
     }
 
     fn resolve_auth() -> Option<String> {
@@ -81,7 +91,7 @@ mod tests {
         unsafe {
             std::env::set_var("PREFECT_API_URL", "https://test.example.com/api");
         }
-        let result = Config::resolve_api_url();
+        let result = Config::resolve_api_url(None);
         unsafe {
             std::env::remove_var("PREFECT_API_URL");
         }

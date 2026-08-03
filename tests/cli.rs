@@ -1,6 +1,12 @@
 use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
 
+fn write_profiles(home: &std::path::Path, contents: &str) {
+    let prefect_dir = home.join(".prefect");
+    std::fs::create_dir_all(&prefect_dir).unwrap();
+    std::fs::write(prefect_dir.join("profiles.toml"), contents).unwrap();
+}
+
 /// Verify that running pfp with no arguments shows help/usage info.
 #[test]
 fn no_args_shows_usage() {
@@ -36,6 +42,76 @@ fn help_lists_subcommands() {
         .stdout(predicate::str::contains("resume"))
         .stdout(predicate::str::contains("schedule-resume"))
         .stdout(predicate::str::contains("cancel"));
+}
+
+#[test]
+fn explicit_server_selects_named_profile_instead_of_environment_url() {
+    let mut selected_server = mockito::Server::new();
+    let selected_request = selected_server
+        .mock("POST", "/deployments/filter")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body("[]")
+        .expect(1)
+        .create();
+    let home = tempfile::tempdir().unwrap();
+    write_profiles(
+        home.path(),
+        &format!(
+            r#"active = "default"
+
+[profiles.default]
+PREFECT_API_URL = "http://127.0.0.1:1"
+
+[profiles.norma]
+PREFECT_API_URL = "{}"
+"#,
+            selected_server.url()
+        ),
+    );
+
+    cargo_bin_cmd!("pfp")
+        .args(["--server", "norma", "ls", "--json"])
+        .env("HOME", home.path())
+        .env("PREFECT_API_URL", "http://127.0.0.1:1")
+        .env_remove("PREFECT_API_AUTH_STRING")
+        .assert()
+        .success();
+
+    selected_request.assert();
+}
+
+#[test]
+fn unknown_explicit_server_is_a_hard_error_without_fallback() {
+    let mut fallback_server = mockito::Server::new();
+    let fallback_request = fallback_server
+        .mock("POST", "/deployments/filter")
+        .expect(0)
+        .create();
+    let home = tempfile::tempdir().unwrap();
+    write_profiles(
+        home.path(),
+        &format!(
+            r#"active = "default"
+
+[profiles.default]
+PREFECT_API_URL = "{}"
+"#,
+            fallback_server.url()
+        ),
+    );
+
+    cargo_bin_cmd!("pfp")
+        .args(["--server", "missing", "ls"])
+        .env("HOME", home.path())
+        .env("PREFECT_API_URL", fallback_server.url())
+        .env_remove("PREFECT_API_AUTH_STRING")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Profile 'missing' not found"));
+
+    fallback_request.assert();
 }
 
 #[test]
