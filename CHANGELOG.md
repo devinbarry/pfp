@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.9] - 2026-08-04
+
+### Changed
+
+- When `profiles.toml` contains more than one distinct Prefect API URL, every
+  network command now requires `--server <PROFILE>` instead of silently using
+  the active profile. This prevents reads from presenting stale data from the
+  wrong cluster and prevents mutations such as `run`, `cancel`, and work-pool
+  changes from targeting the wrong server.
+- Single-server profile files, multiple aliases for the same API URL, and an
+  explicit `PREFECT_API_URL` environment pair retain their existing behavior.
+  Ambiguity errors list only profile names and never expose URLs or credentials.
+
 ## [0.5.8] - 2026-08-04
 
 ### Added
