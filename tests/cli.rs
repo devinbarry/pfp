@@ -121,6 +121,110 @@ PREFECT_API_AUTH_STRING = "host:secret"
 }
 
 #[test]
+fn every_network_command_requires_a_server_when_profiles_target_multiple_apis() {
+    let mut host = mockito::Server::new();
+    let host_request = host
+        .mock("POST", "/deployments/filter")
+        .expect(0)
+        .create();
+    let mut host = mockito::Server::new();
+    let host_request = host.mock("POST", "/deployments/filter").expect(0).create();
+    let home = tempfile::tempdir().unwrap();
+    write_profiles(
+        home.path(),
+        &format!(
+            r#"active = "host"
+
+[profiles.host]
+PREFECT_API_URL = "{}"
+PREFECT_API_AUTH_STRING = "host:secret"
+
+[profiles.host]
+PREFECT_API_URL = "{}"
+PREFECT_API_AUTH_STRING = "host:secret"
+"#,
+            host.url(),
+            host.url()
+        ),
+    );
+
+    let full_uuid = "e130c152-0c97-4e99-81c8-8b0fbb59c11c";
+    let commands: &[&[&str]] = &[
+        &["ls"],
+        &["run", "deploy"],
+        &["runs", "deploy"],
+        &["inspect", full_uuid],
+        &["logs", full_uuid],
+        &["pause", "deploy"],
+        &["resume", "deploy"],
+        &["schedule-resume", "deploy"],
+        &["cancel", full_uuid],
+        &["pool", "status", "host-secure"],
+        &["pool", "assert-idle", "host-secure"],
+        &["pool", "pause", "host-secure"],
+        &["pool", "resume", "host-secure"],
+    ];
+
+    for args in commands {
+        cargo_bin_cmd!("pfp")
+            .args(*args)
+            .env("HOME", home.path())
+            .env_remove("PREFECT_API_URL")
+            .env_remove("PREFECT_API_AUTH_STRING")
+            .assert()
+            .failure()
+            .code(2)
+            .stderr(predicate::str::contains("Multiple Prefect servers"))
+            .stderr(predicate::str::contains("[host, host]"))
+            .stderr(predicate::str::contains("--server <PROFILE>"))
+            .stderr(predicate::str::contains("host:secret").not())
+            .stderr(predicate::str::contains("host:secret").not())
+            .stderr(predicate::str::contains(host.url()).not())
+            .stderr(predicate::str::contains(host.url()).not());
+    }
+
+    host_request.assert();
+    host_request.assert();
+}
+
+#[test]
+fn explicit_environment_pair_remains_an_unambiguous_multi_profile_override() {
+    let mut selected_server = mockito::Server::new();
+    let selected_request = selected_server
+        .mock("POST", "/deployments/filter")
+        .match_header("authorization", "Basic ZW52aXJvbm1lbnQ6c2VjcmV0")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body("[]")
+        .expect(1)
+        .create();
+    let home = tempfile::tempdir().unwrap();
+    write_profiles(
+        home.path(),
+        r#"active = "host"
+
+[profiles.host]
+PREFECT_API_URL = "http://127.0.0.1:1"
+PREFECT_API_AUTH_STRING = "host:secret"
+
+[profiles.host]
+PREFECT_API_URL = "http://127.0.0.1:2"
+PREFECT_API_AUTH_STRING = "host:secret"
+"#,
+    );
+
+    cargo_bin_cmd!("pfp")
+        .args(["ls", "--json"])
+        .env("HOME", home.path())
+        .env("PREFECT_API_URL", selected_server.url())
+        .env("PREFECT_API_AUTH_STRING", "environment:secret")
+        .assert()
+        .success();
+
+    selected_request.assert();
+}
+
+#[test]
 fn unknown_explicit_server_is_a_hard_error_without_fallback() {
     let mut fallback_server = mockito::Server::new();
     let fallback_request = fallback_server

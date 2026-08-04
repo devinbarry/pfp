@@ -1,6 +1,7 @@
 use crate::error::{PfpError, Result};
 use base64::Engine;
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 #[derive(Debug)]
@@ -44,9 +45,17 @@ impl Config {
             });
         }
 
-        // Otherwise the active profile supplies both URL and auth. Retain the
-        // historical auth environment override for this implicit selection.
+        // An active profile was a safe implicit default while pfp managed one
+        // server. Once profiles contain distinct API URLs, silently choosing
+        // the active one can make a valid deployment on another server look
+        // stale or absent, and can send a mutation to the wrong cluster.
         let profiles = Self::read_profiles()?;
+        Self::require_unambiguous_implicit_server(&profiles)?;
+
+        // A single configured server may still have profile aliases. Preserve
+        // the active profile so its URL and authentication remain one pair.
+        // Retain the historical auth environment override for this implicit,
+        // single-server selection.
         let active = profiles.active.as_deref().unwrap_or("default");
         let mut config = Self::from_profile(&profiles, active)?;
         if let Ok(auth_string) = std::env::var("PREFECT_API_AUTH_STRING") {
@@ -66,6 +75,38 @@ impl Config {
             api_url: profile.api_url.clone().ok_or(PfpError::NoApiUrl)?,
             auth_header: Self::encode_auth(profile.auth_string.as_deref()),
         })
+    }
+
+    fn require_unambiguous_implicit_server(profiles: &ProfilesFile) -> Result<()> {
+        let profile_map = profiles.profiles.as_ref();
+        let distinct_urls: HashSet<&str> = profile_map
+            .into_iter()
+            .flat_map(|profiles| profiles.values())
+            .filter_map(|profile| profile.api_url.as_deref())
+            .filter(|url| !url.trim().is_empty())
+            .collect();
+
+        if distinct_urls.len() <= 1 {
+            return Ok(());
+        }
+
+        let mut profile_names: Vec<&str> = profile_map
+            .into_iter()
+            .flat_map(|profiles| profiles.iter())
+            .filter_map(|(name, profile)| {
+                profile
+                    .api_url
+                    .as_deref()
+                    .filter(|url| !url.trim().is_empty())
+                    .map(|_| name.as_str())
+            })
+            .collect();
+        profile_names.sort_unstable();
+
+        Err(PfpError::Config(format!(
+            "Multiple Prefect servers are configured in profiles [{}]; select one with --server <PROFILE> or set PREFECT_API_URL explicitly",
+            profile_names.join(", ")
+        )))
     }
 
     fn encode_auth(auth_string: Option<&str>) -> Option<String> {
@@ -148,6 +189,69 @@ PREFECT_API_AUTH_STRING = "host:secret"
             config.auth_header.as_deref(),
             Some("Basic aG9zdDpzZWNyZXQ")
         );
+    }
+
+    #[test]
+    fn implicit_selection_rejects_multiple_distinct_server_urls() {
+        let profiles: ProfilesFile = toml::from_str(
+            r#"active = "host"
+
+[profiles.host]
+PREFECT_API_URL = "https://host.example/api"
+PREFECT_API_AUTH_STRING = "host:secret"
+
+[profiles.host]
+PREFECT_API_URL = "https://host.example/api"
+PREFECT_API_AUTH_STRING = "host:secret"
+"#,
+        )
+        .unwrap();
+
+        let error = Config::require_unambiguous_implicit_server(&profiles).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("Multiple Prefect servers"));
+        assert!(message.contains("[host, host]"));
+        assert!(message.contains("--server <PROFILE>"));
+        assert!(!message.contains("secret"));
+        assert!(!message.contains("https://"));
+    }
+
+    #[test]
+    fn profile_aliases_for_one_server_remain_unambiguous() {
+        let profiles: ProfilesFile = toml::from_str(
+            r#"active = "operator"
+
+[profiles.operator]
+PREFECT_API_URL = "https://prefect.example/api"
+PREFECT_API_AUTH_STRING = "operator:secret"
+
+[profiles.automation]
+PREFECT_API_URL = "https://prefect.example/api"
+PREFECT_API_AUTH_STRING = "automation:secret"
+"#,
+        )
+        .unwrap();
+
+        Config::require_unambiguous_implicit_server(&profiles).unwrap();
+    }
+
+    #[test]
+    fn missing_and_empty_urls_do_not_create_phantom_servers() {
+        let profiles: ProfilesFile = toml::from_str(
+            r#"active = "configured"
+
+[profiles.configured]
+PREFECT_API_URL = "https://prefect.example/api"
+
+[profiles.missing]
+
+[profiles.empty]
+PREFECT_API_URL = ""
+"#,
+        )
+        .unwrap();
+
+        Config::require_unambiguous_implicit_server(&profiles).unwrap();
     }
 
     #[test]

@@ -45,12 +45,23 @@ PREFECT_API_URL = "https://prefect.example.com/api"
 PREFECT_API_AUTH_STRING = "admin:secret"
 ```
 
-The `PREFECT_API_URL` environment variable takes priority if set.
+The `PREFECT_API_URL` environment variable takes priority if set. If the file
+contains more than one distinct API URL, every command must select one with
+`--server <PROFILE>`; pfp will not silently use the active profile and risk
+querying or mutating the wrong cluster. Single-server files keep the established
+active-profile behavior.
 
 **Authentication** is optional. Put each server's `username:password` value in
 the same profile as its URL. `pfp --server <PROFILE>` selects both values as one
 pair, so a process-wide credential cannot be silently sent to a different
 server. Keep `profiles.toml` owner-only (`chmod 600`).
+
+For example, with `host` and `host` profiles:
+
+```bash
+pfp --server host ls
+pfp --server host runs worker-ansible-prod
+```
 
 For environment-driven use without `--server`, `PREFECT_API_AUTH_STRING`
 continues to override the active profile:
