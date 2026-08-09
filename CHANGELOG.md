@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.10] - 2026-08-09
+
+### Added
+
+- `pfp diagnose <flow-run-uuid>` prints an allowlisted operational summary of
+  one exact flow run, including state, work pool, work queue, infrastructure
+  identifier, attempts, and timing. It never serializes parameters, context,
+  labels, job variables, state data, or the raw Prefect response.
+- `pfp pool workers <exact-pool-name>` reports worker status and heartbeat
+  information without requiring SSH access or process-list inspection. Its
+  JSON output likewise discards unrecognised API fields.
+
 ## [0.5.9] - 2026-08-04
 
 ### Changed
