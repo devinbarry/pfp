@@ -37,6 +37,7 @@ fn help_lists_subcommands() {
         .stdout(predicate::str::contains("run"))
         .stdout(predicate::str::contains("runs"))
         .stdout(predicate::str::contains("inspect"))
+        .stdout(predicate::str::contains("diagnose"))
         .stdout(predicate::str::contains("logs"))
         .stdout(predicate::str::contains("pause"))
         .stdout(predicate::str::contains("resume"))
@@ -403,4 +404,87 @@ fn run_params_file_stdin_valid_json_read_once() {
         .failure()
         .stderr(predicate::str::contains("Invalid JSON").not())
         .stderr(predicate::str::contains("EOF").not());
+}
+
+#[test]
+fn diagnose_json_never_emits_secret_bearing_flow_run_fields() {
+    let mut server = mockito::Server::new();
+    let flow_run_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let request = server
+        .mock("GET", format!("/flow_runs/{flow_run_id}").as_str())
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(format!(
+            r#"{{"id":"{flow_run_id}","name":"safe-run","state_type":"RUNNING","state_name":"Running","work_pool_name":"docker-secure","work_queue_name":"default","infrastructure_pid":"container:abc123","parameters":{{"token":"SENTINEL_SECRET"}},"context":{{"token":"SENTINEL_SECRET"}},"labels":{{"token":"SENTINEL_SECRET"}},"job_variables":{{"token":"SENTINEL_SECRET"}},"state":{{"message":"SENTINEL_SECRET","data":"SENTINEL_SECRET"}}}}"#
+        ))
+        .expect(1)
+        .create();
+
+    cargo_bin_cmd!("pfp")
+        .args(["diagnose", flow_run_id, "--json"])
+        .env("PREFECT_API_URL", server.url())
+        .env_remove("PREFECT_API_AUTH_STRING")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""name": "safe-run""#))
+        .stdout(predicate::str::contains(
+            r#""work_pool_name": "docker-secure""#,
+        ))
+        .stdout(predicate::str::contains("SENTINEL_SECRET").not())
+        .stdout(predicate::str::contains("parameters").not())
+        .stdout(predicate::str::contains("job_variables").not());
+
+    request.assert();
+}
+
+#[test]
+fn diagnose_requires_full_uuid() {
+    cargo_bin_cmd!("pfp")
+        .args(["diagnose", "e130c152", "--json"])
+        .env("PREFECT_API_URL", "http://127.0.0.1:1")
+        .env_remove("PREFECT_API_AUTH_STRING")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "diagnose requires a full flow run UUID",
+        ));
+}
+
+#[test]
+fn pool_workers_json_never_emits_unrecognised_worker_fields() {
+    let mut server = mockito::Server::new();
+    let pool = server
+        .mock("GET", "/work_pools/docker-secure")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"name":"docker-secure","is_paused":false,"status":"READY"}"#)
+        .expect(1)
+        .create();
+    let workers = server
+        .mock("POST", "/work_pools/docker-secure/workers/filter")
+        .match_body(mockito::Matcher::JsonString(
+            serde_json::json!({"workers": null, "offset": 0, "limit": 200}).to_string(),
+        ))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"[{"name":"worker-1","status":"ONLINE","last_heartbeat_time":"2026-08-09T12:00:00Z","heartbeat_interval_seconds":30,"metadata":{"token":"SENTINEL_SECRET"}}]"#,
+        )
+        .expect(1)
+        .create();
+
+    cargo_bin_cmd!("pfp")
+        .args(["pool", "workers", "docker-secure", "--json"])
+        .env("PREFECT_API_URL", server.url())
+        .env_remove("PREFECT_API_AUTH_STRING")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""name": "worker-1""#))
+        .stdout(predicate::str::contains(r#""status": "ONLINE""#))
+        .stdout(predicate::str::contains("SENTINEL_SECRET").not())
+        .stdout(predicate::str::contains("metadata").not());
+
+    pool.assert();
+    workers.assert();
 }

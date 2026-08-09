@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::error::{PfpError, Result};
-use crate::models::{DeploymentSchedule, WorkPool};
+use crate::models::{DeploymentSchedule, FlowRunDiagnostic, WorkPool, WorkerDiagnostic};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
@@ -161,6 +161,10 @@ impl PrefectClient {
         self.get(&format!("/flow_runs/{}", flow_run_id)).await
     }
 
+    pub async fn get_flow_run_diagnostic(&self, flow_run_id: &str) -> Result<FlowRunDiagnostic> {
+        self.get(&format!("/flow_runs/{}", flow_run_id)).await
+    }
+
     pub async fn filter_flow_runs(
         &self,
         deployment_id: &str,
@@ -287,6 +291,16 @@ impl PrefectClient {
             }
         });
         self.post("/flow_runs/count", &body).await
+    }
+
+    pub async fn list_workers_for_work_pool(&self, name: &str) -> Result<Vec<WorkerDiagnostic>> {
+        let path = format!("{}/workers/filter", work_pool_path(name)?);
+        let body = serde_json::json!({
+            "workers": null,
+            "offset": 0,
+            "limit": 200
+        });
+        self.post(&path, &body).await
     }
 
     pub async fn set_work_pool_paused(&self, name: &str, paused: bool) -> Result<WorkPool> {
@@ -777,6 +791,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn lists_credential_safe_workers_for_exact_work_pool() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/work_pools/docker-secure/workers/filter")
+            .match_header("authorization", "Basic dGVzdDp0ZXN0")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({
+                    "workers": null,
+                    "offset": 0,
+                    "limit": 200
+                })
+                .to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"[{"name":"worker-1","status":"ONLINE","last_heartbeat_time":"2026-08-09T12:00:00Z","heartbeat_interval_seconds":30,"metadata":{"token":"SENTINEL_SECRET"}}]"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        let workers = test_client(&server)
+            .list_workers_for_work_pool("docker-secure")
+            .await
+            .unwrap();
+
+        assert_eq!(workers.len(), 1);
+        assert_eq!(workers[0].name, "worker-1");
+        assert!(!serde_json::to_string(&workers)
+            .unwrap()
+            .contains("SENTINEL_SECRET"));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn updates_and_verifies_work_pool_pause_state() {
         let mut server = mockito::Server::new_async().await;
         let patch = server
@@ -853,6 +903,9 @@ mod tests {
                 .count_nonterminal_flow_runs_for_work_pool(name)
                 .await
                 .unwrap_err();
+            assert!(matches!(error, PfpError::Validation(_)));
+
+            let error = client.list_workers_for_work_pool(name).await.unwrap_err();
             assert!(matches!(error, PfpError::Validation(_)));
         }
     }

@@ -40,6 +40,22 @@ pub async fn assert_idle(client: PrefectClient, name: String, json: bool) -> Res
     }
 }
 
+pub async fn workers(client: PrefectClient, name: String, json: bool) -> Result<()> {
+    // Resolve the exact pool first so a typo cannot be mistaken for an empty,
+    // healthy worker list.
+    let pool = client.get_work_pool(&name).await?;
+    let workers = client.list_workers_for_work_pool(&pool.name).await?;
+
+    if json {
+        output::print_json(&workers);
+    } else if workers.is_empty() {
+        println!("No workers registered for {}", pool.name);
+    } else {
+        output::print_worker_diagnostics(&workers);
+    }
+    Ok(())
+}
+
 pub async fn set_paused(client: PrefectClient, name: String, paused: bool) -> Result<()> {
     let pool = client.set_work_pool_paused(&name, paused).await?;
     let action = if paused { "Paused" } else { "Resumed" };

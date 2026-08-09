@@ -43,6 +43,21 @@ pub struct WorkPool {
     pub concurrency_limit: Option<u64>,
 }
 
+/// Credential-safe worker health returned by Prefect's worker API.
+///
+/// Keep this model deliberately narrow. Unknown API fields are discarded so
+/// `--json` cannot accidentally turn into a raw Prefect response dump.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct WorkerDiagnostic {
+    pub name: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub last_heartbeat_time: Option<String>,
+    #[serde(default)]
+    pub heartbeat_interval_seconds: Option<u64>,
+}
+
 impl Deployment {
     pub fn full_name(&self) -> String {
         format!("{}/{}", self.flow_name, self.name)
@@ -77,6 +92,47 @@ pub struct FlowRun {
     pub estimated_run_time: f64,
     #[serde(default)]
     pub parameters: serde_json::Value,
+}
+
+/// An allowlisted diagnostic view of a flow run.
+///
+/// Do not add parameters, context, labels, job variables, state data, or raw
+/// API payloads here. Those fields can contain credentials. This type exists
+/// specifically so `pfp diagnose --json` remains safe to share.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FlowRunDiagnostic {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub state_type: Option<String>,
+    #[serde(default)]
+    pub state_name: Option<String>,
+    #[serde(default)]
+    pub deployment_id: Option<String>,
+    #[serde(default)]
+    pub deployment_version: Option<String>,
+    #[serde(default)]
+    pub work_pool_name: Option<String>,
+    #[serde(default)]
+    pub work_queue_name: Option<String>,
+    #[serde(default)]
+    pub infrastructure_pid: Option<String>,
+    #[serde(default)]
+    pub run_count: u64,
+    #[serde(default)]
+    pub expected_start_time: Option<String>,
+    #[serde(default)]
+    pub next_scheduled_start_time: Option<String>,
+    #[serde(default)]
+    pub start_time: Option<String>,
+    #[serde(default)]
+    pub end_time: Option<String>,
+    #[serde(default)]
+    pub total_run_time: f64,
+    #[serde(default)]
+    pub estimated_run_time: f64,
+    #[serde(default)]
+    pub estimated_start_time_delta: f64,
 }
 
 impl FlowRun {
@@ -315,5 +371,47 @@ mod tests {
         assert!(pool.is_paused);
         assert_eq!(pool.status.as_deref(), Some("PAUSED"));
         assert_eq!(pool.concurrency_limit, Some(1));
+    }
+
+    #[test]
+    fn worker_diagnostic_discards_unknown_fields() {
+        let worker: WorkerDiagnostic = serde_json::from_value(json!({
+            "name": "worker-1",
+            "status": "ONLINE",
+            "last_heartbeat_time": "2026-08-09T12:00:00Z",
+            "heartbeat_interval_seconds": 30,
+            "metadata": {"token": "SENTINEL_SECRET"}
+        }))
+        .unwrap();
+
+        let rendered = serde_json::to_string(&worker).unwrap();
+        assert!(!rendered.contains("SENTINEL_SECRET"));
+        assert_eq!(worker.name, "worker-1");
+        assert_eq!(worker.status, "ONLINE");
+    }
+
+    #[test]
+    fn flow_run_diagnostic_discards_secret_bearing_fields() {
+        let diagnostic: FlowRunDiagnostic = serde_json::from_value(json!({
+            "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "name": "safe-run",
+            "state_type": "RUNNING",
+            "state_name": "Running",
+            "work_pool_name": "docker-secure",
+            "work_queue_name": "default",
+            "infrastructure_pid": "container:abc123",
+            "parameters": {"token": "SENTINEL_SECRET"},
+            "context": {"token": "SENTINEL_SECRET"},
+            "labels": {"token": "SENTINEL_SECRET"},
+            "job_variables": {"token": "SENTINEL_SECRET"},
+            "state": {"data": "SENTINEL_SECRET", "message": "SENTINEL_SECRET"}
+        }))
+        .unwrap();
+
+        let rendered = serde_json::to_string(&diagnostic).unwrap();
+        assert!(!rendered.contains("SENTINEL_SECRET"));
+        assert!(!rendered.contains("parameters"));
+        assert!(!rendered.contains("job_variables"));
+        assert_eq!(diagnostic.work_pool_name.as_deref(), Some("docker-secure"));
     }
 }

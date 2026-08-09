@@ -1,10 +1,10 @@
-use crate::models::{Deployment, FlowRun, LogEntry, WorkPool};
+use crate::models::{Deployment, FlowRun, FlowRunDiagnostic, LogEntry, WorkPool, WorkerDiagnostic};
 use colored::Colorize;
 
 pub fn state_color(state: &str) -> colored::ColoredString {
     match state.to_uppercase().as_str() {
-        "COMPLETED" | "ACTIVE" => state.green(),
-        "FAILED" | "CRASHED" => state.red(),
+        "COMPLETED" | "ACTIVE" | "ONLINE" | "READY" => state.green(),
+        "FAILED" | "CRASHED" | "OFFLINE" => state.red(),
         "RUNNING" => state.blue(),
         "PENDING" | "SCHEDULED" => state.yellow(),
         "CANCELLED" | "PAUSED" => state.magenta(),
@@ -55,6 +55,86 @@ pub fn print_work_pool(pool: &WorkPool) {
     );
 }
 
+pub fn print_worker_diagnostics(workers: &[WorkerDiagnostic]) {
+    println!(
+        "{:<36} {:<10} {:<27} HEARTBEAT INTERVAL",
+        "WORKER", "STATUS", "LAST HEARTBEAT"
+    );
+    for worker in workers {
+        let status = if worker.status.is_empty() {
+            "UNKNOWN"
+        } else {
+            &worker.status
+        };
+        println!(
+            "{:<36} {:<10} {:<27} {}",
+            truncate(&worker.name, 36),
+            state_color(status),
+            worker.last_heartbeat_time.as_deref().unwrap_or("-"),
+            worker
+                .heartbeat_interval_seconds
+                .map(|seconds| format!("{seconds}s"))
+                .unwrap_or_else(|| "-".to_string()),
+        );
+    }
+}
+
+pub fn print_flow_run_diagnostic(run: &FlowRunDiagnostic) {
+    let state = run
+        .state_name
+        .as_deref()
+        .or(run.state_type.as_deref())
+        .unwrap_or("UNKNOWN");
+    println!("Flow run:            {}", run.name);
+    println!("ID:                  {}", run.id);
+    println!("State:               {}", state_color(state));
+    println!(
+        "Deployment ID:       {}",
+        run.deployment_id.as_deref().unwrap_or("-")
+    );
+    println!(
+        "Deployment version:  {}",
+        run.deployment_version.as_deref().unwrap_or("-")
+    );
+    println!(
+        "Work pool:           {}",
+        run.work_pool_name.as_deref().unwrap_or("-")
+    );
+    println!(
+        "Work queue:          {}",
+        run.work_queue_name.as_deref().unwrap_or("-")
+    );
+    println!(
+        "Infrastructure PID:  {}",
+        run.infrastructure_pid.as_deref().unwrap_or("-")
+    );
+    println!("Run count:           {}", run.run_count);
+    println!(
+        "Expected start:      {}",
+        run.expected_start_time.as_deref().unwrap_or("-")
+    );
+    println!(
+        "Next scheduled:      {}",
+        run.next_scheduled_start_time.as_deref().unwrap_or("-")
+    );
+    println!(
+        "Started:             {}",
+        run.start_time.as_deref().unwrap_or("-")
+    );
+    println!(
+        "Ended:               {}",
+        run.end_time.as_deref().unwrap_or("-")
+    );
+    println!(
+        "Run time:            {}",
+        format_seconds(run.estimated_run_time.max(run.total_run_time))
+    );
+    println!(
+        "Start delay:         {}",
+        format_seconds(run.estimated_start_time_delta)
+    );
+}
+
 pub fn print_logs(logs: &[LogEntry]) {
     for log in logs {
         let ts = if log.timestamp.len() >= 19 {
@@ -95,6 +175,15 @@ fn truncate(s: &str, max_len: usize) -> String {
     }
 }
 
+fn format_seconds(seconds: f64) -> String {
+    let seconds = seconds.max(0.0).round() as u64;
+    if seconds < 60 {
+        format!("{seconds}s")
+    } else {
+        format!("{}m {:02}s", seconds / 60, seconds % 60)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,5 +212,10 @@ mod tests {
     #[test]
     fn truncate_exact_length() {
         assert_eq!(truncate("hello", 5), "hello");
+    }
+
+    #[test]
+    fn format_seconds_handles_minutes() {
+        assert_eq!(format_seconds(125.4), "2m 05s");
     }
 }

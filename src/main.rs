@@ -65,6 +65,13 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Show a credential-safe diagnostic summary for one flow run
+    Diagnose {
+        /// Full flow run UUID
+        flow_run_id: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Show logs for a flow run
     Logs {
         /// Flow run ID or UUID prefix
@@ -109,6 +116,13 @@ enum Commands {
 enum PoolAction {
     /// Show one exact work pool
     Status {
+        /// Exact work pool name
+        name: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show worker heartbeat and status for one exact work pool
+    Workers {
         /// Exact work pool name
         name: String,
         #[arg(long)]
@@ -201,6 +215,10 @@ fn describe_command(
             "inspect".into(),
             serde_json::json!({ "flow_run_id": flow_run_id, "json": json }),
         ),
+        Commands::Diagnose { flow_run_id, json } => (
+            "diagnose".into(),
+            serde_json::json!({ "flow_run_id": flow_run_id, "json": json }),
+        ),
         Commands::Logs {
             flow_run_id,
             limit,
@@ -223,6 +241,10 @@ fn describe_command(
         Commands::Pool { action } => match action {
             PoolAction::Status { name, json } => (
                 "pool status".into(),
+                serde_json::json!({ "name": name, "json": json }),
+            ),
+            PoolAction::Workers { name, json } => (
+                "pool workers".into(),
                 serde_json::json!({ "name": name, "json": json }),
             ),
             PoolAction::AssertIdle { name, json } => (
@@ -271,6 +293,11 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
             let client = PrefectClient::new(config);
             commands::inspect::run(client, flow_run_id, json).await
         }
+        Commands::Diagnose { flow_run_id, json } => {
+            let config = Config::load(server.as_deref())?;
+            let client = PrefectClient::new(config);
+            commands::diagnose::run(client, flow_run_id, json).await
+        }
         Commands::Logs {
             flow_run_id,
             limit,
@@ -308,6 +335,9 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
                 PoolAction::Status { name, json } => {
                     commands::pool::status(client, name, json).await
                 }
+                PoolAction::Workers { name, json } => {
+                    commands::pool::workers(client, name, json).await
+                }
                 PoolAction::AssertIdle { name, json } => {
                     commands::pool::assert_idle(client, name, json).await
                 }
@@ -338,6 +368,35 @@ mod tests {
             }
             _ => panic!("expected pool status command"),
         }
+    }
+
+    #[test]
+    fn parses_pool_workers_json() {
+        let cli =
+            Cli::try_parse_from(["pfp", "pool", "workers", "docker-secure", "--json"]).unwrap();
+
+        match cli.command {
+            Commands::Pool {
+                action: PoolAction::Workers { name, json },
+            } => {
+                assert_eq!(name, "docker-secure");
+                assert!(json);
+            }
+            _ => panic!("expected pool workers command"),
+        }
+    }
+
+    #[test]
+    fn parses_diagnose_json() {
+        let cli = Cli::try_parse_from([
+            "pfp",
+            "diagnose",
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "--json",
+        ])
+        .unwrap();
+
+        assert!(matches!(cli.command, Commands::Diagnose { json: true, .. }));
     }
 
     #[test]
