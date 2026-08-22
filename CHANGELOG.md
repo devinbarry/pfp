@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-08-22
+
+### Added
+
+- `pfp deployment inspect <name>` reports what a deployment is actually
+  registered as: its version, work pool and queue, entrypoint, tags, and the
+  parameters saved at its last successful registration. A deployment keeps those
+  values until something re-registers it, so a manifest in a repository is not
+  evidence of live state.
+- Each schedule is listed with its own active flag. A deployment can be active
+  while every schedule attached to it is not, and the two states are reported
+  separately rather than inferred from each other.
+- Job variables, pull steps, and storage configuration are deliberately absent
+  from both the table and `--json`: they carry credentials, and the deployment
+  model stays narrow so unrecognised API fields cannot reach the output.
+
 ## [0.5.10] - 2026-08-09
 
 ### Added
