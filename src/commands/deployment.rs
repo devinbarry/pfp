@@ -30,6 +30,13 @@ pub async fn inspect(client: PrefectClient, query: String, json: bool) -> Result
     Ok(())
 }
 
+pub async fn delete(client: PrefectClient, query: String) -> Result<()> {
+    let deployment = resolve::resolve_deployment(&client, &query).await?;
+    client.delete_deployment(&deployment.id).await?;
+    eprintln!("Deleted: {}", deployment.full_name());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,5 +120,73 @@ mod tests {
             .unwrap_err();
 
         assert!(error.to_string().contains("absent"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn deletes_only_the_resolved_deployment() {
+        let mut server = mockito::Server::new_async().await;
+        let id = "11111111-2222-3333-4444-555555555555";
+        let mut mocks = mount(&mut server, id).await;
+        mocks.pop();
+        let delete_mock = server
+            .mock("DELETE", format!("/deployments/{id}").as_str())
+            .match_header("authorization", "Basic dGVzdDp0ZXN0")
+            .with_status(204)
+            .expect(1)
+            .create_async()
+            .await;
+
+        delete(test_client(&server), "ansible-deploy-prod".to_string())
+            .await
+            .unwrap();
+
+        for mock in mocks {
+            mock.assert_async().await;
+        }
+        delete_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn ambiguous_delete_fails_before_sending_delete() {
+        let mut server = mockito::Server::new_async().await;
+        let deployments = server
+            .mock("POST", "/deployments/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"[{"id":"dep-1","name":"prod","flow_id":"f1"},
+                     {"id":"dep-2","name":"prod","flow_id":"f2"}]"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let flows = server
+            .mock("POST", "/flows/filter")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"[{"id":"f1","name":"ansible_deploy"},
+                     {"id":"f2","name":"terraform_deploy"}]"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let no_delete = server
+            .mock("DELETE", mockito::Matcher::Any)
+            .expect(0)
+            .create_async()
+            .await;
+
+        let error = delete(test_client(&server), "prod".to_string())
+            .await
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("Ambiguous match 'prod'"),
+            "{error}"
+        );
+        deployments.assert_async().await;
+        flows.assert_async().await;
+        no_delete.assert_async().await;
     }
 }

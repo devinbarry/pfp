@@ -206,6 +206,16 @@ deployment can be active while every schedule attached to it is not.
 Job variables, pull steps, and storage configuration are deliberately not shown:
 they carry credentials, and this output is meant to be safe to paste.
 
+Delete a superseded registration after resolving it to one unique deployment:
+
+```bash
+pfp deployment delete ansible_deploy/old-deployment-prod
+```
+
+Deletion is immediate and does not prompt for confirmation. The command accepts
+the same unique substring matching as other deployment commands; use the full
+`flow/deployment` name shown by `pfp ls` for destructive operations.
+
 ### pfp pool
 
 Inspect or change one exact work pool name:

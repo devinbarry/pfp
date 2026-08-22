@@ -126,6 +126,11 @@ enum DeploymentAction {
         #[arg(long)]
         json: bool,
     },
+    /// Permanently delete one uniquely resolved deployment without prompting
+    Delete {
+        /// Deployment name (substring match)
+        query: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -279,6 +284,10 @@ fn describe_command(
                 "deployment inspect".into(),
                 serde_json::json!({ "query": query, "json": json }),
             ),
+            DeploymentAction::Delete { query } => (
+                "deployment delete".into(),
+                serde_json::json!({ "query": query }),
+            ),
         },
     }
 }
@@ -376,6 +385,9 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
                 DeploymentAction::Inspect { query, json } => {
                     commands::deployment::inspect(client, query, json).await
                 }
+                DeploymentAction::Delete { query } => {
+                    commands::deployment::delete(client, query).await
+                }
             }
         }
     }
@@ -472,6 +484,24 @@ mod tests {
                 assert_eq!(tags, vec!["urgent", "operator"]);
             }
             _ => panic!("expected run command"),
+        }
+    }
+
+    #[test]
+    fn parses_deployment_delete() {
+        let cli = Cli::try_parse_from([
+            "pfp",
+            "deployment",
+            "delete",
+            "ansible_deploy/old-deployment-prod",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Deployment {
+                action: DeploymentAction::Delete { query },
+            } => assert_eq!(query, "ansible_deploy/old-deployment-prod"),
+            _ => panic!("expected deployment delete command"),
         }
     }
 }

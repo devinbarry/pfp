@@ -42,7 +42,18 @@ fn help_lists_subcommands() {
         .stdout(predicate::str::contains("pause"))
         .stdout(predicate::str::contains("resume"))
         .stdout(predicate::str::contains("schedule-resume"))
-        .stdout(predicate::str::contains("cancel"));
+        .stdout(predicate::str::contains("cancel"))
+        .stdout(predicate::str::contains("deployment"));
+}
+
+#[test]
+fn deployment_help_lists_delete() {
+    cargo_bin_cmd!("pfp")
+        .args(["deployment", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("inspect"))
+        .stdout(predicate::str::contains("delete"));
 }
 
 #[test]
@@ -155,15 +166,19 @@ PREFECT_API_AUTH_STRING = "host:secret"
         &["run", "deploy"],
         &["runs", "deploy"],
         &["inspect", full_uuid],
+        &["diagnose", full_uuid],
         &["logs", full_uuid],
         &["pause", "deploy"],
         &["resume", "deploy"],
         &["schedule-resume", "deploy"],
         &["cancel", full_uuid],
         &["pool", "status", "host-secure"],
+        &["pool", "workers", "host-secure"],
         &["pool", "assert-idle", "host-secure"],
         &["pool", "pause", "host-secure"],
         &["pool", "resume", "host-secure"],
+        &["deployment", "inspect", "deploy"],
+        &["deployment", "delete", "deploy"],
     ];
 
     for args in commands {
@@ -186,6 +201,46 @@ PREFECT_API_AUTH_STRING = "host:secret"
 
     host_request.assert();
     host_request.assert();
+}
+
+#[test]
+fn deployment_delete_resolves_and_deletes_exact_id() {
+    let mut server = mockito::Server::new();
+    let deployments = server
+        .mock("POST", "/deployments/filter")
+        .match_header("authorization", "Basic dGVzdDp0ZXN0")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"[{"id":"dep-123","name":"old-prod","flow_id":"flow-1"}]"#)
+        .expect(1)
+        .create();
+    let flows = server
+        .mock("POST", "/flows/filter")
+        .match_header("authorization", "Basic dGVzdDp0ZXN0")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"[{"id":"flow-1","name":"ansible_deploy"}]"#)
+        .expect(1)
+        .create();
+    let deletion = server
+        .mock("DELETE", "/deployments/dep-123")
+        .match_header("authorization", "Basic dGVzdDp0ZXN0")
+        .with_status(204)
+        .expect(1)
+        .create();
+
+    cargo_bin_cmd!("pfp")
+        .args(["deployment", "delete", "ansible_deploy/old-prod"])
+        .env("PREFECT_API_URL", server.url())
+        .env("PREFECT_API_AUTH_STRING", "test:test")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("Deleted: ansible_deploy/old-prod"));
+
+    deployments.assert();
+    flows.assert();
+    deletion.assert();
 }
 
 #[test]

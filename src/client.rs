@@ -73,6 +73,23 @@ impl PrefectClient {
         Ok(())
     }
 
+    pub async fn delete_no_content(&self, path: &str) -> Result<()> {
+        let url = format!("{}{}", self.config.api_url, path);
+        let mut req = self.client.delete(&url);
+        if let Some(auth) = &self.config.auth_header {
+            req = req.header("Authorization", auth);
+        }
+        let response = req.send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(PfpError::Api(format!("{}: {}", status, body)));
+        }
+
+        Ok(())
+    }
+
     // -- Prefect API methods --
 
     pub async fn list_deployments(&self) -> Result<Vec<serde_json::Value>> {
@@ -232,6 +249,11 @@ impl PrefectClient {
     pub async fn set_deployment_paused(&self, deployment_id: &str, paused: bool) -> Result<()> {
         let body = serde_json::json!({ "paused": paused });
         self.patch_no_content(&format!("/deployments/{}", deployment_id), &body)
+            .await
+    }
+
+    pub async fn delete_deployment(&self, deployment_id: &str) -> Result<()> {
+        self.delete_no_content(&format!("/deployments/{}", deployment_id))
             .await
     }
 
@@ -508,6 +530,50 @@ mod tests {
         let result = client.set_deployment_paused("dep-id", true).await;
 
         assert!(result.is_ok());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn delete_deployment_success() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("DELETE", "/deployments/dep-id")
+            .match_header("authorization", "Basic dGVzdDp0ZXN0")
+            .with_status(204)
+            .expect(1)
+            .create_async()
+            .await;
+
+        test_client(&server)
+            .delete_deployment("dep-id")
+            .await
+            .unwrap();
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn delete_deployment_surfaces_api_error() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("DELETE", "/deployments/dep-id")
+            .with_status(409)
+            .with_body("deployment still in use")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let error = test_client(&server)
+            .delete_deployment("dep-id")
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(error, PfpError::Api(ref message)
+                if message.contains("409 Conflict")
+                    && message.contains("deployment still in use")),
+            "{error}"
+        );
         mock.assert_async().await;
     }
 
