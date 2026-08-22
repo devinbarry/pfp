@@ -12,6 +12,7 @@ pfp talks directly to the Prefect REST API, bypassing the official CLI's limitat
 - **Dotted path parameters** — `--set config.action=destroy` builds nested JSON
 - **Parameter validation** — typos caught before submission with "did you mean?" suggestions
 - **Work-pool controls** — inspect, assert idle, pause, or resume one exact pool name
+- **Registered state** — see a deployment's live version, schedules, and saved parameters
 - **`--json` on everything** — structured output for programmatic consumption
 - **Full deployment names** — no truncation, ever
 
@@ -186,6 +187,24 @@ and reports whether that rollback was complete.
 ```bash
 pfp cancel e130c152-db01-428a-9698-e8404cd2c5d3    # cancel a running flow run
 ```
+
+### pfp deployment
+
+Show what a deployment is actually registered as, rather than what a manifest in
+a repository says it should be:
+
+```bash
+pfp deployment inspect host-ansible-prod
+pfp deployment inspect host-ansible-prod --json
+```
+
+A deployment keeps the values from its last successful registration, so the
+reported `Version` and the saved parameters are the way to tell live state from
+the repository. Each schedule is listed with its own active flag, because a
+deployment can be active while every schedule attached to it is not.
+
+Job variables, pull steps, and storage configuration are deliberately not shown:
+they carry credentials, and this output is meant to be safe to paste.
 
 ### pfp pool
 

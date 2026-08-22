@@ -20,6 +20,19 @@ pub struct Deployment {
     pub parameters: serde_json::Value,
     #[serde(default)]
     pub parameter_openapi_schema: Option<serde_json::Value>,
+    /// What a registration recorded. A deployment keeps the values from its last
+    /// successful registration, so this is how you tell live state from the
+    /// manifest in the repository.
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub entrypoint: Option<String>,
+    #[serde(default)]
+    pub work_queue_name: Option<String>,
+    #[serde(default)]
+    pub updated: Option<String>,
+    #[serde(default)]
+    pub enforce_parameter_schema: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -29,6 +42,36 @@ pub struct DeploymentSchedule {
     pub active: bool,
     #[serde(default)]
     pub slug: Option<String>,
+    #[serde(default)]
+    pub schedule: Option<ScheduleSpec>,
+}
+
+/// When a schedule fires. Deliberately narrow: a deployment's schedule block can
+/// carry more than this, and none of the rest belongs in `--json` output.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ScheduleSpec {
+    #[serde(default)]
+    pub cron: Option<String>,
+    #[serde(default)]
+    pub interval: Option<f64>,
+    #[serde(default)]
+    pub timezone: Option<String>,
+}
+
+impl ScheduleSpec {
+    /// One-line description of the cadence, whichever form it takes.
+    pub fn summary(&self) -> String {
+        if let Some(cron) = &self.cron {
+            return match &self.timezone {
+                Some(zone) => format!("{cron} ({zone})"),
+                None => cron.clone(),
+            };
+        }
+        match self.interval {
+            Some(seconds) => format!("every {seconds}s"),
+            None => "-".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

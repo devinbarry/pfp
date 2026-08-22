@@ -110,6 +110,22 @@ enum Commands {
         #[command(subcommand)]
         action: PoolAction,
     },
+    /// Inspect a registered deployment
+    Deployment {
+        #[command(subcommand)]
+        action: DeploymentAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum DeploymentAction {
+    /// Show what one deployment is registered as, including its saved parameters
+    Inspect {
+        /// Deployment name (substring match)
+        query: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -258,6 +274,12 @@ fn describe_command(
                 ("pool resume".into(), serde_json::json!({ "name": name }))
             }
         },
+        Commands::Deployment { action } => match action {
+            DeploymentAction::Inspect { query, json } => (
+                "deployment inspect".into(),
+                serde_json::json!({ "query": query, "json": json }),
+            ),
+        },
     }
 }
 
@@ -344,6 +366,15 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
                 PoolAction::Pause { name } => commands::pool::set_paused(client, name, true).await,
                 PoolAction::Resume { name } => {
                     commands::pool::set_paused(client, name, false).await
+                }
+            }
+        }
+        Commands::Deployment { action } => {
+            let config = Config::load(server.as_deref())?;
+            let client = PrefectClient::new(config);
+            match action {
+                DeploymentAction::Inspect { query, json } => {
+                    commands::deployment::inspect(client, query, json).await
                 }
             }
         }

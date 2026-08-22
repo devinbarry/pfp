@@ -1,4 +1,7 @@
-use crate::models::{Deployment, FlowRun, FlowRunDiagnostic, LogEntry, WorkPool, WorkerDiagnostic};
+use crate::models::{
+    Deployment, DeploymentSchedule, FlowRun, FlowRunDiagnostic, LogEntry, WorkPool,
+    WorkerDiagnostic,
+};
 use colored::Colorize;
 
 pub fn state_color(state: &str) -> colored::ColoredString {
@@ -161,6 +164,100 @@ pub fn print_watch_state(state_name: &str, timestamp: &str) {
     };
     let state = state_color(state_name);
     println!("{} | {}", ts, state);
+}
+
+pub fn print_deployment_detail(deployment: &Deployment, schedules: &[DeploymentSchedule]) {
+    println!("Deployment:          {}", deployment.name);
+    println!("ID:                  {}", deployment.id);
+    println!("Flow:                {}", deployment.flow_name);
+    println!(
+        "Version:             {}",
+        deployment.version.as_deref().unwrap_or("-")
+    );
+    println!(
+        "State:               {}",
+        if deployment.paused {
+            "PAUSED".yellow()
+        } else {
+            "ACTIVE".green()
+        }
+    );
+    println!(
+        "Work pool:           {}",
+        deployment.work_pool_name.as_deref().unwrap_or("-")
+    );
+    println!(
+        "Work queue:          {}",
+        deployment.work_queue_name.as_deref().unwrap_or("-")
+    );
+    println!(
+        "Entrypoint:          {}",
+        deployment.entrypoint.as_deref().unwrap_or("-")
+    );
+    println!(
+        "Updated:             {}",
+        deployment.updated.as_deref().unwrap_or("-")
+    );
+    println!(
+        "Schema enforced:     {}",
+        if deployment.enforce_parameter_schema {
+            "yes"
+        } else {
+            "no"
+        }
+    );
+    println!(
+        "Tags:                {}",
+        if deployment.tags.is_empty() {
+            "-".to_string()
+        } else {
+            deployment.tags.join(", ")
+        }
+    );
+
+    println!("\nSchedules:");
+    if schedules.is_empty() {
+        println!("  (none)");
+    } else {
+        for schedule in schedules {
+            let state = if schedule.active {
+                "ACTIVE".green()
+            } else {
+                "INACTIVE".yellow()
+            };
+            let cadence = schedule
+                .schedule
+                .as_ref()
+                .map(|spec| spec.summary())
+                .unwrap_or_else(|| "-".to_string());
+            println!(
+                "  {:<10} {:<24} {}",
+                state,
+                schedule.slug.as_deref().unwrap_or("-"),
+                cadence
+            );
+        }
+    }
+
+    println!("\nSaved parameters:");
+    match &deployment.parameters {
+        serde_json::Value::Object(map) if !map.is_empty() => {
+            let width = map.keys().map(String::len).max().unwrap_or(0);
+            for (key, value) in map {
+                println!("  {:<width$}  {}", key, compact(value), width = width);
+            }
+        }
+        _ => println!("  (none)"),
+    }
+}
+
+/// Render a saved parameter on one line; a nested object stays JSON.
+fn compact(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Null => "null".to_string(),
+        other => other.to_string(),
+    }
 }
 
 pub fn print_json<T: serde::Serialize>(value: &T) {

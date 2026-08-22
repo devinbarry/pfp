@@ -1,4 +1,5 @@
 pub mod cancel;
+pub mod deployment;
 pub mod diagnose;
 pub mod inspect;
 pub mod logs;
