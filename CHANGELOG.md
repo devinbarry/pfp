@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1] - 2026-08-23
+
+### Added
+
+- `pfp deployment delete <name>` permanently removes one uniquely resolved
+  deployment registration. It uses the same substring matching as other
+  deployment commands, rejects ambiguous matches before mutation, and accepts a
+  full `flow/deployment` name for precise destructive use.
+
+### Documentation
+
+- The implementation plan for client-side parameter validation is now tracked
+  alongside its design spec in `docs/superpowers/plans/`. The feature itself
+  shipped in 0.4.0; only the plan document was missing from the repository.
+
 ## [0.6.0] - 2026-08-22
 
 ### Added
