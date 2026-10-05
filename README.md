@@ -7,7 +7,7 @@ A fast CLI for managing [Prefect 3](https://docs.prefect.io/) deployments and fl
 pfp talks directly to the Prefect REST API, bypassing the official CLI's limitations: truncated output, unreliable exit codes, and awkward parameter syntax.
 
 - **Substring matching** — `pfp run happy-t` finds `happy_terraform/happy-terraform-prod`
-- **Correct exit codes** — 0 for success, 1 for flow failure, 2 for CLI errors
+- **Correct exit codes** — 0 for success, 1 for flow failure, 2 for CLI errors, 3 for a gateway policy denial
 - **`--watch` that works** — polls until completion with state change reporting
 - **Dotted path parameters** — `--set config.action=destroy` builds nested JSON
 - **Parameter validation** — typos caught before submission with "did you mean?" suggestions
@@ -188,6 +188,36 @@ and reports whether that rollback was complete.
 pfp cancel e130c152-db01-428a-9698-e8404cd2c5d3    # cancel a running flow run
 ```
 
+### pfp approve / pfp reject
+
+Answer a flow run that is paused waiting for an `approved: bool` input:
+
+```bash
+pfp approve e130c152-db01-428a-9698-e8404cd2c5d3   # resume with approved=true
+pfp reject  e130c152                                # resume with approved=false (UUID prefix works)
+```
+
+pfp checks Prefect's orchestration result, so approving a run that is not paused fails with exit code 2. Behind a
+Prefect gateway, approval is decided by the gateway's policy; a denial prints the policy's reason and exits with
+code 3. An agent that gets exit code 3 stops and waits for the operator.
+
+### pfp policy
+
+Show the policy of the Prefect gateway in front of the selected server (the gateway serves it beside the API, at
+`<server>/gateway/policy`):
+
+```bash
+pfp --server host policy
+pfp --server host policy --json
+```
+
+### Agent identity
+
+When pfp runs inside an AI agent session it identifies the agent to the gateway with `X-Agent-Id`, `X-Agent-Tool`,
+`X-Agent-Model` and `X-Agent-Session` headers. The values come from the same git configuration that writes agent
+commit trailers: `git config agent.id` (set only while an agent's `GIT_CONFIG_GLOBAL` is active) and the
+`KEY=value` output of the command named by `git config agent.provenance`. Without `agent.id`, no headers are sent.
+
 ### pfp deployment
 
 Show what a deployment is actually registered as, rather than what a manifest in
@@ -327,6 +357,7 @@ The payload is validated against the deployment schema — the same client-side 
 | 0 | Success — command completed, flow run finished (if `--watch`) |
 | 1 | Flow failure — flow run ended in Failed, Cancelled, or Crashed (only with `--watch`) |
 | 2 | CLI error — bad arguments, no match, ambiguous match, API unreachable |
+| 3 | Policy denial — the Prefect gateway's policy refused the request; stop and wait for the operator |
 
 ## License
 

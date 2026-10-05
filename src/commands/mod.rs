@@ -1,3 +1,4 @@
+pub mod approve;
 pub mod cancel;
 pub mod deployment;
 pub mod diagnose;
@@ -5,6 +6,7 @@ pub mod inspect;
 pub mod logs;
 pub mod ls;
 pub mod pause;
+pub mod policy;
 pub mod pool;
 pub mod resume;
 pub mod run;

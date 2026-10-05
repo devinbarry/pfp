@@ -26,13 +26,19 @@ pub enum PfpError {
     #[error("{0}")]
     #[allow(dead_code)]
     Validation(String),
+
+    /// The Prefect gateway's policy refused the request. Agents stop and wait.
+    #[error("{0}")]
+    PolicyDenied(String),
 }
 
 impl PfpError {
-    /// Exit code: 1 for flow run failures, 2 for CLI/usage errors.
+    /// Exit code: 1 for flow run failures, 3 for gateway policy denials,
+    /// 2 for CLI/usage and other errors.
     pub fn exit_code(&self) -> i32 {
         match self {
             PfpError::FlowRunFailed(_) => 1,
+            PfpError::PolicyDenied(_) => 3,
             _ => 2,
         }
     }
@@ -80,6 +86,13 @@ mod tests {
         let msg = format!("{}", err);
         assert!(msg.contains("abc"));
         assert!(msg.contains("abc-123"));
+    }
+
+    #[test]
+    fn exit_code_policy_denied() {
+        let err = PfpError::PolicyDenied("Denied by gateway policy: no".to_string());
+        assert_eq!(err.exit_code(), 3);
+        assert_eq!(format!("{}", err), "Denied by gateway policy: no");
     }
 
     #[test]

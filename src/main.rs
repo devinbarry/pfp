@@ -6,6 +6,7 @@ mod logger;
 mod models;
 mod output;
 mod params;
+mod provenance;
 mod resolve;
 mod validate;
 
@@ -99,6 +100,21 @@ enum Commands {
     ScheduleResume {
         /// Deployment name (substring match)
         query: String,
+    },
+    /// Approve a flow run paused for approval (subject to the gateway policy; exit 3 when denied)
+    Approve {
+        /// Flow run ID or UUID prefix
+        flow_run_id: String,
+    },
+    /// Reject a flow run paused for approval
+    Reject {
+        /// Flow run ID or UUID prefix
+        flow_run_id: String,
+    },
+    /// Show the gateway policy that decides what agents may do
+    Policy {
+        #[arg(long)]
+        json: bool,
     },
     /// Cancel a running flow run
     Cancel {
@@ -255,6 +271,15 @@ fn describe_command(
             "schedule-resume".into(),
             serde_json::json!({ "query": query }),
         ),
+        Commands::Approve { flow_run_id } => (
+            "approve".into(),
+            serde_json::json!({ "flow_run_id": flow_run_id }),
+        ),
+        Commands::Reject { flow_run_id } => (
+            "reject".into(),
+            serde_json::json!({ "flow_run_id": flow_run_id }),
+        ),
+        Commands::Policy { json } => ("policy".into(), serde_json::json!({ "json": json })),
         Commands::Cancel { flow_run_id } => (
             "cancel".into(),
             serde_json::json!({ "flow_run_id": flow_run_id }),
@@ -353,6 +378,21 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
             let config = Config::load(server.as_deref())?;
             let client = PrefectClient::new(config);
             commands::schedule_resume::run(client, query).await
+        }
+        Commands::Approve { flow_run_id } => {
+            let config = Config::load(server.as_deref())?;
+            let client = PrefectClient::new(config);
+            commands::approve::run(client, flow_run_id, true).await
+        }
+        Commands::Reject { flow_run_id } => {
+            let config = Config::load(server.as_deref())?;
+            let client = PrefectClient::new(config);
+            commands::approve::run(client, flow_run_id, false).await
+        }
+        Commands::Policy { json } => {
+            let config = Config::load(server.as_deref())?;
+            let client = PrefectClient::new(config);
+            commands::policy::run(client, json).await
         }
         Commands::Cancel { flow_run_id } => {
             let config = Config::load(server.as_deref())?;

@@ -1,13 +1,15 @@
 use crate::config::Config;
 use crate::error::{PfpError, Result};
 use crate::models::{DeploymentSchedule, FlowRunDiagnostic, WorkPool, WorkerDiagnostic};
-use reqwest::Client;
+use crate::provenance;
+use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 
 pub struct PrefectClient {
     client: Client,
     config: Config,
+    agent_headers: Vec<(&'static str, String)>,
 }
 
 impl PrefectClient {
@@ -15,24 +17,34 @@ impl PrefectClient {
         Self {
             client: Client::new(),
             config,
+            agent_headers: provenance::agent_headers(),
         }
+    }
+
+    /// Attach the caller's credential and, inside an agent session, its identity.
+    fn authorize(&self, mut req: RequestBuilder) -> RequestBuilder {
+        if let Some(auth) = &self.config.auth_header {
+            req = req.header("Authorization", auth);
+        }
+        for (name, value) in &self.agent_headers {
+            req = req.header(*name, value);
+        }
+        req
+    }
+
+    async fn send(&self, req: RequestBuilder) -> Result<Response> {
+        let response = self.authorize(req).send().await?;
+        if response.status().is_success() {
+            return Ok(response);
+        }
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        Err(error_for(status, &body))
     }
 
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}{}", self.config.api_url, path);
-        let mut req = self.client.get(&url);
-        if let Some(auth) = &self.config.auth_header {
-            req = req.header("Authorization", auth);
-        }
-        let response = req.send().await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(PfpError::Api(format!("{}: {}", status, body)));
-        }
-
-        Ok(response.json().await?)
+        Ok(self.send(self.client.get(&url)).await?.json().await?)
     }
 
     pub async fn post<T: DeserializeOwned>(
@@ -41,53 +53,35 @@ impl PrefectClient {
         body: &serde_json::Value,
     ) -> Result<T> {
         let url = format!("{}{}", self.config.api_url, path);
-        let mut req = self.client.post(&url);
-        if let Some(auth) = &self.config.auth_header {
-            req = req.header("Authorization", auth);
-        }
-        let response = req.json(body).send().await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(PfpError::Api(format!("{}: {}", status, body)));
-        }
-
-        Ok(response.json().await?)
+        Ok(self
+            .send(self.client.post(&url).json(body))
+            .await?
+            .json()
+            .await?)
     }
 
     pub async fn patch_no_content(&self, path: &str, body: &serde_json::Value) -> Result<()> {
         let url = format!("{}{}", self.config.api_url, path);
-        let mut req = self.client.patch(&url);
-        if let Some(auth) = &self.config.auth_header {
-            req = req.header("Authorization", auth);
-        }
-        let response = req.json(body).send().await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(PfpError::Api(format!("{}: {}", status, body)));
-        }
-
+        self.send(self.client.patch(&url).json(body)).await?;
         Ok(())
     }
 
     pub async fn delete_no_content(&self, path: &str) -> Result<()> {
         let url = format!("{}{}", self.config.api_url, path);
-        let mut req = self.client.delete(&url);
-        if let Some(auth) = &self.config.auth_header {
-            req = req.header("Authorization", auth);
-        }
-        let response = req.send().await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(PfpError::Api(format!("{}: {}", status, body)));
-        }
-
+        self.send(self.client.delete(&url)).await?;
         Ok(())
+    }
+
+    /// Read the policy published by the Prefect gateway in front of this server.
+    pub async fn get_gateway_policy(&self) -> Result<serde_json::Value> {
+        let api_url = self.config.api_url.trim_end_matches('/');
+        let base = api_url.strip_suffix("/api").ok_or_else(|| {
+            PfpError::Config(format!(
+                "cannot locate the gateway: API URL {api_url} does not end in /api"
+            ))
+        })?;
+        let url = format!("{base}/gateway/policy");
+        Ok(self.send(self.client.get(&url)).await?.json().await?)
     }
 
     // -- Prefect API methods --
@@ -291,6 +285,16 @@ impl PrefectClient {
             .await
     }
 
+    pub async fn resume_flow_run(
+        &self,
+        flow_run_id: &str,
+        approved: bool,
+    ) -> Result<serde_json::Value> {
+        let body = serde_json::json!({ "run_input": { "approved": approved } });
+        self.post(&format!("/flow_runs/{}/resume", flow_run_id), &body)
+            .await
+    }
+
     pub async fn get_work_pool(&self, name: &str) -> Result<WorkPool> {
         let path = work_pool_path(name)?;
         self.get(&path).await
@@ -338,6 +342,21 @@ impl PrefectClient {
         }
         Ok(pool)
     }
+}
+
+/// A gateway policy denial is reported as such; anything else stays an API error.
+fn error_for(status: StatusCode, body: &str) -> PfpError {
+    if status == StatusCode::FORBIDDEN {
+        if let Ok(document) = serde_json::from_str::<serde_json::Value>(body) {
+            if document.get("gateway").is_some() {
+                let detail = document["detail"]
+                    .as_str()
+                    .unwrap_or("Denied by gateway policy");
+                return PfpError::PolicyDenied(detail.to_string());
+            }
+        }
+    }
+    PfpError::Api(format!("{}: {}", status, body))
 }
 
 fn work_pool_path(name: &str) -> Result<String> {
