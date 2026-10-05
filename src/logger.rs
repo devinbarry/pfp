@@ -308,6 +308,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(pfp_log_max_bytes)]
     fn test_configured_max_bytes_default() {
         // With no env var set, should return the default.
         std::env::remove_var(LOG_MAX_BYTES_ENV);
@@ -315,6 +316,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(pfp_log_max_bytes)]
     fn test_configured_max_bytes_env_override() {
         std::env::set_var(LOG_MAX_BYTES_ENV, "5000");
         assert_eq!(configured_max_log_file_bytes(), 5000);
@@ -322,6 +324,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(pfp_log_max_bytes)]
     fn test_configured_max_bytes_zero_uses_default() {
         std::env::set_var(LOG_MAX_BYTES_ENV, "0");
         assert_eq!(configured_max_log_file_bytes(), DEFAULT_MAX_LOG_FILE_BYTES);
@@ -329,6 +332,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(pfp_log_max_bytes)]
     fn test_configured_max_bytes_non_numeric_uses_default() {
         std::env::set_var(LOG_MAX_BYTES_ENV, "not-a-number");
         assert_eq!(configured_max_log_file_bytes(), DEFAULT_MAX_LOG_FILE_BYTES);
