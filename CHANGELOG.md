@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-10-05
+
+### Added
+
+- `pfp approve <flow-run>` and `pfp reject <flow-run>` answer a flow run paused
+  on an `approved: bool` input. They accept a UUID prefix and check Prefect's
+  orchestration result, so answering a run that is not paused fails.
+- Behind the Prefect gateway, a request its policy refuses exits with the new
+  code **3** and prints the policy's reason. Agents stop and wait for the
+  operator on exit code 3.
+- `pfp policy` (and `--json`) shows the gateway policy that decides what agents
+  may do.
+- Inside an agent session every request carries `X-Agent-Id`, `X-Agent-Tool`,
+  `X-Agent-Model` and `X-Agent-Session`, taken from `git config agent.id` and
+  the command named by `git config agent.provenance`: the same source as agent
+  commit trailers. Nothing is sent outside an agent session.
+
+### Fixed
+
+- Four logger tests that set the same environment variable no longer race when
+  cargo runs them in parallel.
+
 ## [0.6.1] - 2026-08-23
 
 ### Added
