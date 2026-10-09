@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.3] - 2026-10-09
+
+### Changed
+
+- Release tooling only; 0.7.2 was tagged but never published. No change to the
+  program.
+
 ## [0.7.2] - 2026-10-09
 
 ### Changed
