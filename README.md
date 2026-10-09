@@ -57,11 +57,11 @@ the same profile as its URL. `pfp --server <PROFILE>` selects both values as one
 pair, so a process-wide credential cannot be silently sent to a different
 server. Keep `profiles.toml` owner-only (`chmod 600`).
 
-For example, with `host` and `host` profiles:
+For example, with `alpha` and `beta` profiles:
 
 ```bash
-pfp --server host ls
-pfp --server host runs worker-ansible-prod
+pfp --server alpha ls
+pfp --server beta runs worker-ansible-prod
 ```
 
 For environment-driven use without `--server`, `PREFECT_API_AUTH_STRING`
@@ -207,8 +207,8 @@ Show the policy of the Prefect gateway in front of the selected server (the gate
 `<server>/gateway/policy`):
 
 ```bash
-pfp --server host policy
-pfp --server host policy --json
+pfp --server beta policy
+pfp --server beta policy --json
 ```
 
 ### Agent identity

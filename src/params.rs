@@ -202,8 +202,8 @@ mod tests {
     #[test]
     fn auto_type_json_array_with_quotes() {
         assert_eq!(
-            auto_type(r#"["proxmox_virtual_environment_vm.node[\"host-2\"]"]"#),
-            json!(["proxmox_virtual_environment_vm.node[\"host-2\"]"])
+            auto_type(r#"["proxmox_virtual_environment_vm.node[\"edge-2\"]"]"#),
+            json!(["proxmox_virtual_environment_vm.node[\"edge-2\"]"])
         );
     }
 

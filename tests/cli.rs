@@ -61,7 +61,7 @@ fn explicit_server_selects_named_profile_instead_of_environment_url() {
     let mut selected_server = mockito::Server::new();
     let selected_request = selected_server
         .mock("POST", "/deployments/filter")
-        .match_header("authorization", "Basic aG9zdDpzZWNyZXQ")
+        .match_header("authorization", "Basic YmV0YTpzZWNyZXQ=")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body("[]")
@@ -77,16 +77,16 @@ fn explicit_server_selects_named_profile_instead_of_environment_url() {
 PREFECT_API_URL = "http://127.0.0.1:1"
 PREFECT_API_AUTH_STRING = "default:secret"
 
-[profiles.host]
+[profiles.beta]
 PREFECT_API_URL = "{}"
-PREFECT_API_AUTH_STRING = "host:secret"
+PREFECT_API_AUTH_STRING = "beta:secret"
 "#,
             selected_server.url()
         ),
     );
 
     cargo_bin_cmd!("pfp")
-        .args(["--server", "host", "ls", "--json"])
+        .args(["--server", "beta", "ls", "--json"])
         .env("HOME", home.path())
         .env("PREFECT_API_URL", "http://127.0.0.1:1")
         .env("PREFECT_API_AUTH_STRING", "environment:wrong")
@@ -101,7 +101,7 @@ fn active_profile_auth_is_used_when_environment_is_absent() {
     let mut selected_server = mockito::Server::new();
     let selected_request = selected_server
         .mock("POST", "/deployments/filter")
-        .match_header("authorization", "Basic aG9zdDpzZWNyZXQ")
+        .match_header("authorization", "Basic YWxwaGE6c2VjcmV0")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body("[]")
@@ -111,11 +111,11 @@ fn active_profile_auth_is_used_when_environment_is_absent() {
     write_profiles(
         home.path(),
         &format!(
-            r#"active = "host"
+            r#"active = "alpha"
 
-[profiles.host]
+[profiles.alpha]
 PREFECT_API_URL = "{}"
-PREFECT_API_AUTH_STRING = "host:secret"
+PREFECT_API_AUTH_STRING = "alpha:secret"
 "#,
             selected_server.url()
         ),
@@ -134,29 +134,26 @@ PREFECT_API_AUTH_STRING = "host:secret"
 
 #[test]
 fn every_network_command_requires_a_server_when_profiles_target_multiple_apis() {
-    let mut host = mockito::Server::new();
-    let host_request = host
-        .mock("POST", "/deployments/filter")
-        .expect(0)
-        .create();
-    let mut host = mockito::Server::new();
-    let host_request = host.mock("POST", "/deployments/filter").expect(0).create();
+    let mut alpha = mockito::Server::new();
+    let alpha_request = alpha.mock("POST", "/deployments/filter").expect(0).create();
+    let mut beta = mockito::Server::new();
+    let beta_request = beta.mock("POST", "/deployments/filter").expect(0).create();
     let home = tempfile::tempdir().unwrap();
     write_profiles(
         home.path(),
         &format!(
-            r#"active = "host"
+            r#"active = "alpha"
 
-[profiles.host]
+[profiles.alpha]
 PREFECT_API_URL = "{}"
-PREFECT_API_AUTH_STRING = "host:secret"
+PREFECT_API_AUTH_STRING = "alpha:secret"
 
-[profiles.host]
+[profiles.beta]
 PREFECT_API_URL = "{}"
-PREFECT_API_AUTH_STRING = "host:secret"
+PREFECT_API_AUTH_STRING = "beta:secret"
 "#,
-            host.url(),
-            host.url()
+            alpha.url(),
+            beta.url()
         ),
     );
 
@@ -172,11 +169,11 @@ PREFECT_API_AUTH_STRING = "host:secret"
         &["resume", "deploy"],
         &["schedule-resume", "deploy"],
         &["cancel", full_uuid],
-        &["pool", "status", "host-secure"],
-        &["pool", "workers", "host-secure"],
-        &["pool", "assert-idle", "host-secure"],
-        &["pool", "pause", "host-secure"],
-        &["pool", "resume", "host-secure"],
+        &["pool", "status", "beta-secure"],
+        &["pool", "workers", "beta-secure"],
+        &["pool", "assert-idle", "beta-secure"],
+        &["pool", "pause", "beta-secure"],
+        &["pool", "resume", "beta-secure"],
         &["deployment", "inspect", "deploy"],
         &["deployment", "delete", "deploy"],
     ];
@@ -191,16 +188,16 @@ PREFECT_API_AUTH_STRING = "host:secret"
             .failure()
             .code(2)
             .stderr(predicate::str::contains("Multiple Prefect servers"))
-            .stderr(predicate::str::contains("[host, host]"))
+            .stderr(predicate::str::contains("[alpha, beta]"))
             .stderr(predicate::str::contains("--server <PROFILE>"))
-            .stderr(predicate::str::contains("host:secret").not())
-            .stderr(predicate::str::contains("host:secret").not())
-            .stderr(predicate::str::contains(host.url()).not())
-            .stderr(predicate::str::contains(host.url()).not());
+            .stderr(predicate::str::contains("alpha:secret").not())
+            .stderr(predicate::str::contains("beta:secret").not())
+            .stderr(predicate::str::contains(alpha.url()).not())
+            .stderr(predicate::str::contains(beta.url()).not());
     }
 
-    host_request.assert();
-    host_request.assert();
+    alpha_request.assert();
+    beta_request.assert();
 }
 
 #[test]
@@ -257,15 +254,15 @@ fn explicit_environment_pair_remains_an_unambiguous_multi_profile_override() {
     let home = tempfile::tempdir().unwrap();
     write_profiles(
         home.path(),
-        r#"active = "host"
+        r#"active = "alpha"
 
-[profiles.host]
+[profiles.alpha]
 PREFECT_API_URL = "http://127.0.0.1:1"
-PREFECT_API_AUTH_STRING = "host:secret"
+PREFECT_API_AUTH_STRING = "alpha:secret"
 
-[profiles.host]
+[profiles.beta]
 PREFECT_API_URL = "http://127.0.0.1:2"
-PREFECT_API_AUTH_STRING = "host:secret"
+PREFECT_API_AUTH_STRING = "beta:secret"
 "#,
     );
 

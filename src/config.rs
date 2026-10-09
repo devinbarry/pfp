@@ -170,39 +170,39 @@ mod tests {
     #[test]
     fn profile_resolves_url_and_auth_as_one_pair() {
         let profiles: ProfilesFile = toml::from_str(
-            r#"active = "host"
+            r#"active = "alpha"
 
-[profiles.host]
-PREFECT_API_URL = "https://host.example/api"
-PREFECT_API_AUTH_STRING = "host:secret"
+[profiles.alpha]
+PREFECT_API_URL = "https://alpha.example/api"
+PREFECT_API_AUTH_STRING = "alpha:secret"
 
-[profiles.host]
-PREFECT_API_URL = "https://host.example/api"
-PREFECT_API_AUTH_STRING = "host:secret"
+[profiles.beta]
+PREFECT_API_URL = "https://beta.example/api"
+PREFECT_API_AUTH_STRING = "beta:secret"
 "#,
         )
         .unwrap();
 
-        let config = Config::from_profile(&profiles, "host").unwrap();
-        assert_eq!(config.api_url, "https://host.example/api");
+        let config = Config::from_profile(&profiles, "beta").unwrap();
+        assert_eq!(config.api_url, "https://beta.example/api");
         assert_eq!(
             config.auth_header.as_deref(),
-            Some("Basic aG9zdDpzZWNyZXQ")
+            Some("Basic YmV0YTpzZWNyZXQ=")
         );
     }
 
     #[test]
     fn implicit_selection_rejects_multiple_distinct_server_urls() {
         let profiles: ProfilesFile = toml::from_str(
-            r#"active = "host"
+            r#"active = "alpha"
 
-[profiles.host]
-PREFECT_API_URL = "https://host.example/api"
-PREFECT_API_AUTH_STRING = "host:secret"
+[profiles.alpha]
+PREFECT_API_URL = "https://alpha.example/api"
+PREFECT_API_AUTH_STRING = "alpha:secret"
 
-[profiles.host]
-PREFECT_API_URL = "https://host.example/api"
-PREFECT_API_AUTH_STRING = "host:secret"
+[profiles.beta]
+PREFECT_API_URL = "https://beta.example/api"
+PREFECT_API_AUTH_STRING = "beta:secret"
 "#,
         )
         .unwrap();
@@ -210,7 +210,7 @@ PREFECT_API_AUTH_STRING = "host:secret"
         let error = Config::require_unambiguous_implicit_server(&profiles).unwrap_err();
         let message = error.to_string();
         assert!(message.contains("Multiple Prefect servers"));
-        assert!(message.contains("[host, host]"));
+        assert!(message.contains("[alpha, beta]"));
         assert!(message.contains("--server <PROFILE>"));
         assert!(!message.contains("secret"));
         assert!(!message.contains("https://"));

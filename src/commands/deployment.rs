@@ -53,7 +53,7 @@ mod tests {
         format!(
             r#"[{{"id":"{id}","name":"ansible-deploy-prod","flow_id":"f1","paused":false,
                  "version":"1.2.3","entrypoint":"flows/x/src/flow.py:flow",
-                 "work_pool_name":"host-general","work_queue_name":"default",
+                 "work_pool_name":"beta-general","work_queue_name":"default",
                  "enforce_parameter_schema":true,
                  "parameters":{{"deployment_name":"host","playbook_name":"deploy_host"}}}}]"#
         )

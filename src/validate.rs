@@ -1139,7 +1139,7 @@ mod tests {
                 "git_ref": "abc123",
                 "ansible_tags": "firewall,observability",
                 "ansible_debug": true,
-                "ansible_limit": "example.invalid",
+                "ansible_limit": "edge-1.example.invalid",
                 "playbook_name": "deploy_happy",
                 "vault_secrets": [{"path": "kv/test", "field": "PASS", "env_var": "MY_PASS"}],
                 "inventory_name": "happy"
@@ -1196,7 +1196,7 @@ mod tests {
         let schema = load_fixture("terraform_schema.json");
         let params = json!({
             "config": {
-                "name": "host",
+                "name": "router",
                 "action": "plan",
                 "module": "proxmox_vm",
                 "dry_run": false
@@ -1211,13 +1211,13 @@ mod tests {
         let schema = load_fixture("terraform_schema.json");
         let params = json!({
             "config": {
-                "name": "host",
+                "name": "router",
                 "action": "apply",
                 "module": "proxmox_vm",
-                "cluster": "host",
+                "cluster": "alpha",
                 "dry_run": false,
                 "parallelism": 5,
-                "proxmox_node": "host-1",
+                "proxmox_node": "edge-1",
                 "import_address": "tailscale_acl.policy",
                 "proxmox_api_url": "https://proxmox.example.com",
                 "terraform_target": ["proxmox_virtual_environment_vm.node"],
@@ -1264,11 +1264,11 @@ mod tests {
         use crate::params;
         let schema = load_fixture("terraform_schema.json");
         let overrides = params::build_params(&[
-            "config.name=host".to_string(),
+            "config.name=router".to_string(),
             "config.action=apply".to_string(),
             "config.dry_run=false".to_string(),
             "config.parallelism=5".to_string(),
-            r#"config.terraform_target=["proxmox_virtual_environment_vm.node[\"host-2\"]"]"#
+            r#"config.terraform_target=["proxmox_virtual_environment_vm.node[\"edge-2\"]"]"#
                 .to_string(),
         ])
         .unwrap();
