@@ -4,6 +4,8 @@ version = "0.7.0"
 edition = "2021"
 description = "Prefect CLI - a fast Rust CLI for managing Prefect deployments and flow runs"
 license = "MIT"
+# Only what the crate needs; everything else stays out of crates.io.
+include = ["/src/**/*", "/Cargo.toml", "/Cargo.lock", "/README.md", "/CHANGELOG.md"]
 repository = "https://github.com/devinbarry/pfp"
 publish = false
 
