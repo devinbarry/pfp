@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.1] - 2026-10-09
+
+### Security
+
+- Updated dependencies, clearing advisories in `rustls`, `rustls-webpki` and
+  `h2`. `cargo audit` and a Trivy scan are clean.
+
+### Changed
+
+- Builds with Rust 1.97.1.
+- The published crate contains only the source, manifest, lockfile, README and
+  changelog.
+- Examples and tests use neutral profile and deployment names.
+
 ## [0.7.0] - 2026-10-05
 
 ### Added
