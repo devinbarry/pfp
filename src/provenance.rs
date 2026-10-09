@@ -76,14 +76,14 @@ mod tests {
 
     #[test]
     fn builds_headers_from_provenance_lines() {
-        let provenance = "TOOL=claude-code 2.1.300\nMODEL=claude-opus-5-5\nSESSION=6bde2c17\n";
+        let provenance = "TOOL=claude-code 2.1.300\nMODEL=claude-opus-5-5\nSESSION=s-0001\n";
         assert_eq!(
             headers("claude", provenance),
             vec![
                 ("X-Agent-Id", "claude".to_string()),
                 ("X-Agent-Tool", "claude-code 2.1.300".to_string()),
                 ("X-Agent-Model", "claude-opus-5-5".to_string()),
-                ("X-Agent-Session", "6bde2c17".to_string()),
+                ("X-Agent-Session", "s-0001".to_string()),
             ]
         );
     }
