@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn auto_type_float() {
-        assert_eq!(auto_type("3.14"), json!(3.14));
+        assert_eq!(auto_type("2.5"), json!(2.5));
     }
 
     #[test]
