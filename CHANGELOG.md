@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.2] - 2026-10-09
+
+### Changed
+
+- Release tooling only: the published repository history is cleaned more
+  thoroughly. No change to the program.
+
 ## [0.7.1] - 2026-10-09
 
 ### Security
