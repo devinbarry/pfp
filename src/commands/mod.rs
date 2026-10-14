@@ -6,6 +6,7 @@ pub mod inspect;
 pub mod logs;
 pub mod ls;
 pub mod pause;
+pub mod plans;
 pub mod policy;
 pub mod pool;
 pub mod resume;

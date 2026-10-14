@@ -101,15 +101,20 @@ enum Commands {
         /// Deployment name (substring match)
         query: String,
     },
-    /// Approve a flow run paused for approval (subject to the gateway policy; exit 3 when denied)
+    /// Approve a gateway plan record or a paused flow run (subject to the gateway policy; exit 3 when denied)
     Approve {
-        /// Flow run ID or UUID prefix
+        /// Plan record ID, or flow run ID or UUID prefix
         flow_run_id: String,
     },
-    /// Reject a flow run paused for approval
+    /// Reject a gateway plan record or a paused flow run
     Reject {
-        /// Flow run ID or UUID prefix
+        /// Plan record ID, or flow run ID or UUID prefix
         flow_run_id: String,
+    },
+    /// List plan records waiting on, or decided through, the Prefect gateway
+    Plans {
+        #[arg(long)]
+        json: bool,
     },
     /// Show the gateway policy that decides what agents may do
     Policy {
@@ -280,6 +285,7 @@ fn describe_command(
             serde_json::json!({ "flow_run_id": flow_run_id }),
         ),
         Commands::Policy { json } => ("policy".into(), serde_json::json!({ "json": json })),
+        Commands::Plans { json } => ("plans".into(), serde_json::json!({ "json": json })),
         Commands::Cancel { flow_run_id } => (
             "cancel".into(),
             serde_json::json!({ "flow_run_id": flow_run_id }),
@@ -393,6 +399,11 @@ async fn run(cli: Cli, params_payload: Option<Result<serde_json::Value>>) -> Res
             let config = Config::load(server.as_deref())?;
             let client = PrefectClient::new(config);
             commands::policy::run(client, json).await
+        }
+        Commands::Plans { json } => {
+            let config = Config::load(server.as_deref())?;
+            let client = PrefectClient::new(config);
+            commands::plans::run(client, json).await
         }
         Commands::Cancel { flow_run_id } => {
             let config = Config::load(server.as_deref())?;

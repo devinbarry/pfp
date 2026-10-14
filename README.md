@@ -190,10 +190,13 @@ pfp cancel e130c152-db01-428a-9698-e8404cd2c5d3    # cancel a running flow run
 
 ### pfp approve / pfp reject
 
-Answer a flow run that is paused waiting for an `approved: bool` input:
+Answer a plan record waiting on the Prefect gateway, or a flow run that is paused waiting for an `approved: bool`
+input. A full ID that the gateway knows as a plan record is decided through the gateway, which starts the plan's one
+apply run on approval; anything else resumes the paused flow run:
 
 ```bash
-pfp approve e130c152-db01-428a-9698-e8404cd2c5d3   # resume with approved=true
+pfp approve 66666666-7777-8888-9999-000000000000   # approve a gateway plan record
+pfp approve e130c152-db01-428a-9698-e8404cd2c5d3   # resume a paused run with approved=true
 pfp reject  e130c152                                # resume with approved=false (UUID prefix works)
 ```
 
@@ -201,10 +204,19 @@ pfp checks Prefect's orchestration result, so approving a run that is not paused
 Prefect gateway, approval is decided by the gateway's policy; a denial prints the policy's reason and exits with
 code 3. An agent that gets exit code 3 stops and waits for the operator.
 
+### pfp plans
+
+List the plan records on the gateway, newest first, with their status and how their apply run ended:
+
+```bash
+pfp --server host plans
+pfp --server host plans --json
+```
+
 ### pfp policy
 
-Show the policy of the Prefect gateway in front of the selected server (the gateway serves it beside the API, at
-`<server>/gateway/policy`):
+Show the Cedar policy the Prefect gateway enforces, grouped by what it does, and any policy change waiting for the
+operator's activation (the gateway serves it beside the API, at `<server>/gateway/policy`):
 
 ```bash
 pfp --server beta policy

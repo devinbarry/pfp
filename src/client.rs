@@ -74,14 +74,55 @@ impl PrefectClient {
 
     /// Read the policy published by the Prefect gateway in front of this server.
     pub async fn get_gateway_policy(&self) -> Result<serde_json::Value> {
+        let url = format!("{}/gateway/policy", self.gateway_base()?);
+        Ok(self.send(self.client.get(&url)).await?.json().await?)
+    }
+
+    /// The gateway answers beside the Prefect API: the API URL without its trailing /api.
+    fn gateway_base(&self) -> Result<String> {
         let api_url = self.config.api_url.trim_end_matches('/');
         let base = api_url.strip_suffix("/api").ok_or_else(|| {
             PfpError::Config(format!(
                 "cannot locate the gateway: API URL {api_url} does not end in /api"
             ))
         })?;
-        let url = format!("{base}/gateway/policy");
+        Ok(base.to_string())
+    }
+
+    /// Plan records waiting on, or decided through, the gateway (newest first).
+    pub async fn list_gateway_plans(&self) -> Result<Vec<serde_json::Value>> {
+        let url = format!("{}/gateway/plans", self.gateway_base()?);
         Ok(self.send(self.client.get(&url)).await?.json().await?)
+    }
+
+    /// One plan record, or None when the gateway holds no plan with this id.
+    pub async fn get_gateway_plan(&self, plan_id: &str) -> Result<Option<serde_json::Value>> {
+        // Without a gateway beside the API there are no plan records, only paused runs.
+        let Ok(base) = self.gateway_base() else {
+            return Ok(None);
+        };
+        let url = format!("{base}/gateway/plans/{plan_id}");
+        let response = self.authorize(self.client.get(&url)).send().await?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(error_for(status, &body));
+        }
+        Ok(Some(response.json().await?))
+    }
+
+    /// Approve or reject a plan record; the gateway's policy decides whether this agent may.
+    pub async fn decide_gateway_plan(
+        &self,
+        plan_id: &str,
+        approved: bool,
+    ) -> Result<serde_json::Value> {
+        let verb = if approved { "approve" } else { "reject" };
+        let url = format!("{}/gateway/plans/{plan_id}/{verb}", self.gateway_base()?);
+        Ok(self.send(self.client.post(&url)).await?.json().await?)
     }
 
     // -- Prefect API methods --
