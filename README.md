@@ -209,8 +209,8 @@ code 3. An agent that gets exit code 3 stops and waits for the operator.
 List the plan records on the gateway, newest first, with their status and how their apply run ended:
 
 ```bash
-pfp --server host plans
-pfp --server host plans --json
+pfp --server beta plans
+pfp --server beta plans --json
 ```
 
 ### pfp policy

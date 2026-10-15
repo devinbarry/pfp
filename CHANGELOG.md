@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-10-15
+
+### Added
+
+- `pfp plans` lists gateway plan records and their apply-run status, with JSON
+  output available through `--json`.
+- `pfp approve` and `pfp reject` can decide gateway plan records by full UUID.
+  Paused flow runs remain supported; gateway policy denials exit with code 3.
+
+### Changed
+
+- `pfp policy` displays the active Cedar policy, grouped permissions and
+  prohibitions, and proposed changes awaiting operator activation.
+- Dependency checks use `cargo deny` over crates that can be compiled, alongside
+  the existing CI vulnerability and secret scan.
+- GitHub release tests and publication use the audited lockfile.
+- Added CLI integration coverage for gateway commands, policy denials, lookup
+  failures, and fallback to paused flow runs.
+
+### Fixed
+
+- API URLs ending in `/` now work for ordinary Prefect requests as well as
+  gateway requests, including approval and rejection of paused flow runs.
+
 ## [0.7.3] - 2026-10-09
 
 ### Changed

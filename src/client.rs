@@ -13,7 +13,9 @@ pub struct PrefectClient {
 }
 
 impl PrefectClient {
-    pub fn new(config: Config) -> Self {
+    pub fn new(mut config: Config) -> Self {
+        // All API paths start with '/'; accept either spelling of the base URL.
+        config.api_url = config.api_url.trim_end_matches('/').to_string();
         Self {
             client: Client::new(),
             config,
