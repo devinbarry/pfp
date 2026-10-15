@@ -6,7 +6,14 @@ pub async fn run(client: PrefectClient, flow_run_id: String) -> Result<()> {
     let resolved_id = resolve::resolve_flow_run(&client, &flow_run_id).await?;
     let result = client.cancel_flow_run(&resolved_id).await?;
     let status = result["status"].as_str().unwrap_or("UNKNOWN");
-    if status != "ACCEPT" {
+    // Prefect substitutes CANCELLED for scheduled/suspended runs with no
+    // infrastructure. That successful transition is reported as REJECT.
+    let cancelled_instead = status == "REJECT"
+        && matches!(
+            result["state"]["type"].as_str(),
+            Some("CANCELLING" | "CANCELLED")
+        );
+    if status != "ACCEPT" && !cancelled_instead {
         let reason = result["details"]["reason"]
             .as_str()
             .unwrap_or("no reason given");

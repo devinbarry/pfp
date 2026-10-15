@@ -33,6 +33,35 @@ fn cancel_requests_orchestrated_cancellation_without_claiming_worker_shutdown() 
 }
 
 #[test]
+fn cancel_accepts_orchestrator_substitution_to_a_cancellation_state() {
+    for state in ["CANCELLED", "CANCELLING"] {
+        let mut server = mockito::Server::new();
+        let home = tempfile::tempdir().unwrap();
+        let request = server
+            .mock("POST", format!("/api/flow_runs/{RUN}/set_state").as_str())
+            .with_status(201)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({"status": "REJECT", "state": {"type": state},
+                "details": {"reason": "Scheduled flow run has no infrastructure to terminate."}})
+                .to_string(),
+            )
+            .create();
+        cargo_bin_cmd!("pfp")
+            .args(["cancel", RUN])
+            .env("HOME", home.path())
+            .env("PREFECT_API_URL", format!("{}/api", server.url()))
+            .env_remove("PREFECT_API_AUTH_STRING")
+            .assert()
+            .success()
+            .stderr(predicate::str::contains(
+                "Cancellation requested for flow run:",
+            ));
+        request.assert();
+    }
+}
+
+#[test]
 fn cancel_does_not_report_success_when_orchestration_refuses_or_delays() {
     for status in ["ABORT", "REJECT", "WAIT", "UNKNOWN"] {
         let mut server = mockito::Server::new();
@@ -41,7 +70,11 @@ fn cancel_does_not_report_success_when_orchestration_refuses_or_delays() {
             .mock("POST", format!("/api/flow_runs/{RUN}/set_state").as_str())
             .with_status(201)
             .with_header("content-type", "application/json")
-            .with_body(json!({"status": status, "details": {"reason": "not accepted"}}).to_string())
+            .with_body(
+                json!({"status": status, "state": {"type": "RUNNING"},
+                "details": {"reason": "not accepted"}})
+                .to_string(),
+            )
             .create();
         cargo_bin_cmd!("pfp")
             .args(["cancel", RUN])
