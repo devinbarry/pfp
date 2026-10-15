@@ -319,10 +319,10 @@ impl PrefectClient {
     pub async fn cancel_flow_run(&self, flow_run_id: &str) -> Result<serde_json::Value> {
         let body = serde_json::json!({
             "state": {
-                "type": "CANCELLED",
-                "message": "Cancelled via pfp CLI"
+                "type": "CANCELLING",
+                "message": "Cancellation requested via pfp CLI"
             },
-            "force": true
+            "force": false
         });
         self.post(&format!("/flow_runs/{}/set_state", flow_run_id), &body)
             .await

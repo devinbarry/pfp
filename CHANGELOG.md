@@ -23,6 +23,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `pfp cancel` requests cancellation through Prefect orchestration instead of
+  forcing a terminal state while the worker may still be running. It reports
+  rejected requests as errors and distinguishes acceptance from worker shutdown.
 - API URLs ending in `/` now work for ordinary Prefect requests as well as
   gateway requests, including approval and rejection of paused flow runs.
 

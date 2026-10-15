@@ -188,6 +188,10 @@ and reports whether that rollback was complete.
 pfp cancel e130c152-db01-428a-9698-e8404cd2c5d3    # cancel a running flow run
 ```
 
+Cancellation requests the `CANCELLING` transition through Prefect's orchestration
+rules. Success means the request was accepted; the worker still needs to stop the
+run. Confirm worker shutdown before starting a replacement that must not overlap.
+
 ### pfp approve / pfp reject
 
 Answer a plan record waiting on the Prefect gateway, or a flow run that is paused waiting for an `approved: bool`

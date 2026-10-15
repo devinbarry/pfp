@@ -1,10 +1,19 @@
 use crate::client::PrefectClient;
-use crate::error::Result;
+use crate::error::{PfpError, Result};
 use crate::resolve;
 
 pub async fn run(client: PrefectClient, flow_run_id: String) -> Result<()> {
     let resolved_id = resolve::resolve_flow_run(&client, &flow_run_id).await?;
-    client.cancel_flow_run(&resolved_id).await?;
-    eprintln!("Cancelled flow run: {}", resolved_id);
+    let result = client.cancel_flow_run(&resolved_id).await?;
+    let status = result["status"].as_str().unwrap_or("UNKNOWN");
+    if status != "ACCEPT" {
+        let reason = result["details"]["reason"]
+            .as_str()
+            .unwrap_or("no reason given");
+        return Err(PfpError::Api(format!(
+            "Prefect did not accept cancellation for flow run {resolved_id}: {status}: {reason}"
+        )));
+    }
+    eprintln!("Cancellation requested for flow run: {resolved_id}");
     Ok(())
 }
